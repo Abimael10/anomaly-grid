@@ -2,7 +2,7 @@
 name = "anomaly-grid"
 version = "0.1.0"
 edition = "2021"
-author = "Juan Abimael Santos Castillo"
+authors = ["Juan Abimael Santos Castillo"]
 description = "Sequential pattern analysis through variable-order Markov chains with spectral decomposition and quantum state modeling. Built for detecting deviations in finite-alphabet sequences."
 
 [dependencies]
