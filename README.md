@@ -329,6 +329,6 @@ cargo test run_all_comprehensive_tests -- --nocapture --ignored
 
 ## 📄 License
 
-Licensed under the MIT License. See [LICENSE](LICENSE) for details.
+Licensed under the MIT License. See LICENCE for details.
 
 ---
