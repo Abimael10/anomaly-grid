@@ -35,7 +35,7 @@ Contact: Please file issues on my repository or reach out directly for technical
 ## 🚀 Quick Start
 
 ```rust
-use anomaly-grid::*;
+use anomaly_grid::*;
 
 // Initialize detection engine
 let mut detector = AdvancedTransitionModel::new(3);
