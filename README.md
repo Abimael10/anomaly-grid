@@ -10,9 +10,27 @@
     [ANOMALY-GRID v0.1.0] - SEQUENCE ANOMALY DETECTION ENGINE
 ```
 
+[![Crates.io](https://img.shields.io/crates/v/anomaly-grid)](https://crates.io/crates/anomaly-grid)
+[![Documentation](https://docs.rs/anomaly-grid/badge.svg)](https://docs.rs/anomaly-grid/0.1.1)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 **Sequential pattern analysis through variable-order Markov chains with spectral decomposition and quantum state modeling. Built for detecting deviations in finite-alphabet sequences.**
 
 ---
+
+
+⚠️ Development Status
+This library is currently in active development and represents ongoing improve of my knowledge in advanced anomaly detection methodologies. While the core algorithms are mathematically sound and extensively tested, there are areas that require further optimization and refinement.
+I acknowledge that complex mathematical implementations can present edge cases and unexpected behaviors. If you encounter any issues, inconsistencies, or have suggestions for improvement, please don't hesitate to reach me out. Your feedback is invaluable for enhancing the library's robustness and reliability.
+Known areas for improvement:
+
+Spectral analysis convergence in edge cases
+Memory optimization for large state spaces
+Performance tuning for specific use cases
+Documentation clarity and completeness
+
+Contact: Please file issues on my repository or reach out directly for technical discussions, bug reports, or collaboration opportunities. I am committed to continuous improvement and appreciate your patience as I or we (hopefully) refine this research implementation.
+
 
 ## 🚀 Quick Start
 
