@@ -1,6 +1,3 @@
-// Advanced Mathematical Implementation for PhD-level Anomaly Detection
-// This shows the beginning of the transformation with cutting-edge mathematical operations
-
 use nalgebra::{Complex, DMatrix, DVector, RealField};
 use ndarray::{Array1, Array2, Array3};
 //use rand_distr::Normal;
