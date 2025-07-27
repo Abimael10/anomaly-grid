@@ -1,5 +1,5 @@
 [package]
-name = "anomaly-grid"
+name = "anomaly_grid"
 version = "0.1.0"
 edition = "2021"
 authors = ["Juan Abimael Santos Castillo"]
