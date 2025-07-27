@@ -5,11 +5,13 @@
 ╔════════════════════════════════════════════════════╗
 ║                   anomaly-grid                     ║
 ║           Sequential Anomaly Detection             ║
-║                   Library v2.0                     ║
+║                   Library v0.1.2                   ║
 ╚════════════════════════════════════════════════════╝
 ```
 
 ## Quick Start
+
+These are included
 
 ```toml
 [dependencies]
@@ -32,7 +34,7 @@ let anomalies = model.detect_advanced_anomalies(&sequence, 0.1);
 
 ### 1. AdvancedTransitionModel
 
-The main analysis engine that builds variable-order Markov models with spectral and quantum extensions.
+The main analysis engine that builds variable-order Markov models with spectral and quantum extensions (this last one is highly speculative, kind of naive and experimental, i will remove in later versions).
 
 ```rust
 pub struct AdvancedTransitionModel {
@@ -455,7 +457,7 @@ fn batch_analysis() -> Result<(), Box<dyn std::error::Error>> {
 
 ### Recommended Limits:
 ```rust
-// Safe operational parameters
+//Safe operational parameters, unless you have a NASA mainframe
 let max_order = 5;              // Higher orders need exponentially more data
 let alphabet_size = 50;         // Keep manageable for memory
 let min_sequence_length = 20 * max_order;  // Minimum for stable analysis
@@ -498,7 +500,7 @@ fn safe_training(sequence: &[String], max_order: usize) -> Result<AdvancedTransi
 }
 ```
 
-### Spectral Analysis Limitations:
+### Spectral Analysis Limitations -- CAUTION :) :
 The spectral analysis may fail or provide degraded results when:
 - Transition matrix is disconnected (isolated states)
 - Very large state spaces (>1000 states)
@@ -507,8 +509,8 @@ The spectral analysis may fail or provide degraded results when:
 
 In these cases, the library gracefully degrades by:
 - Using uniform distributions as fallbacks
-- Skipping spectral analysis while preserving other scores
-- Providing warning messages instead of crashing
+- Skipping spectral analysis while preserving other scores -- working on it
+- Providing warning messages instead of crashing -- still working on it
 
 ## Testing and Validation
 
@@ -544,11 +546,11 @@ The library validates:
 
 ### Known Limitations:
 1. **Exponential memory growth** with context order
-2. **Spectral analysis instability** on large/sparse matrices
-3. **Requires sufficient training data** (20+ × max_order sequence length)
+2. **Spectral analysis instability** on large/sparse matrices -- huge, I will try to make it better on the go
+3. **Requires sufficient training data** (20+ × max_order sequence length) -- Not a problem but there it is
 4. **Discrete alphabet assumption** (not optimized for continuous data)
-5. **Simplified quantum features** (not full quantum computation)
-6. **Basic topological analysis** (not true persistent homology)
+5. **Simplified quantum features** (not full quantum computation) -- Highly speculative as I mentioned, will be removing to continue experiments somewhere else
+6. **Basic topological analysis** (not true persistent homology) :)
 
 ### Best Practices:
 1. Start with `max_order=2` or `3` for initial experiments
@@ -556,7 +558,7 @@ The library validates:
 3. Monitor memory usage with large alphabets
 4. Use batch processing for multiple sequences
 5. Validate results with domain knowledge
-6. Consider data preprocessing to reduce alphabet size
+6. Consider data preprocessing to reduce alphabet size -- Example in the README
 
 ### When to Use This Library:
 - **Sequential pattern analysis** in discrete event streams
@@ -566,7 +568,7 @@ The library validates:
 - **Parallel processing** of multiple sequence datasets
 
 ### When NOT to Use:
-- Continuous numerical data (use other methods)
+- Continuous numerical data (use other methods for now)
 - Very short sequences (<20 elements)  
 - Real-time applications requiring microsecond responses
 - Datasets with >1000 unique symbols
@@ -574,4 +576,4 @@ The library validates:
 
 ---
 
-This manual provides comprehensive coverage of the anomaly-grid library's actual implementation, tested use cases, and practical deployment considerations for production systems.
+This manual provides comprehensive coverage of the anomaly-grid library's actual implementation, tested use cases, and practical deployment considerations for experimental systems and not production.
