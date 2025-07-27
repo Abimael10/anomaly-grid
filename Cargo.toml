@@ -1,9 +1,14 @@
 [package]
-name = "anomaly_grid"
+name = "anomaly-grid"
 version = "0.1.0"
 edition = "2021"
 authors = ["Juan Abimael Santos Castillo"]
 description = "Sequential pattern analysis through variable-order Markov chains with spectral decomposition and quantum state modeling. Built for detecting deviations in finite-alphabet sequences."
+licence = "MIT"
+repository = "https://github.com/Abimael10/anomaly-grid"
+keywords = ["anomaly-detection", "bayesian", "markov-chains", "coherence", "simulation"]
+readme = "README.md"
+categories = ["science", "algorithms", "data-structures", "visualization"]
 
 [dependencies]
 nalgebra = "0.33.2"
