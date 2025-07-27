@@ -5,7 +5,7 @@
 ╔════════════════════════════════════════════════════╗
 ║                   anomaly-grid                     ║
 ║           Sequential Anomaly Detection             ║
-║                   Library v0.1.2                   ║
+║                   Library v0.1.3                   ║
 ╚════════════════════════════════════════════════════╝
 ```
 
@@ -199,35 +199,92 @@ let coherence = 1.0 - trace(density_matrix) / n_states;
 ### Network Security Monitoring
 
 ```rust
-fn detect_network_anomalies() -> Result<(), Box<dyn std::error::Error>> {
-    // Normal traffic patterns
-    let normal_traffic = vec![
-        "TCP_SYN", "TCP_ACK", "HTTP_GET", "HTTP_200", "TCP_FIN",
-        "TCP_SYN", "TCP_ACK", "HTTPS_POST", "HTTP_201", "TCP_FIN",
-        "UDP_DNS", "UDP_RESPONSE", "TCP_SYN", "TCP_ACK", "HTTP_GET", "HTTP_200"
-    ].into_iter().map(String::from).collect();
-    
+fn detect_network_anomalies() -> Result<(), String> {
+    println!("Starting network traffic anomaly detection example...");
+
+    // Normal traffic patterns (training data)
+    let normal_traffic: Vec<String> = vec![ // Corrected type to Vec<String>
+        "TCP_SYN",
+        "TCP_ACK",
+        "HTTP_GET",
+        "HTTP_200",
+        "TCP_FIN",
+        "TCP_SYN",
+        "TCP_ACK",
+        "HTTPS_POST",
+        "HTTP_201",
+        "TCP_FIN",
+        "UDP_DNS",
+        "UDP_RESPONSE",
+        "TCP_SYN",
+        "TCP_ACK",
+        "HTTP_GET",
+        "HTTP_200",
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect();
+
     let mut model = AdvancedTransitionModel::new(4);
-    model.build_context_tree(&normal_traffic)?;
-    
-    // Detect port scanning
-    let suspicious_traffic = vec![
-        "TCP_SYN", "TCP_RST", "TCP_SYN", "TCP_RST", "TCP_SYN", "TCP_RST", // Port scan
-        "HTTP_GET", "HTTP_GET", "HTTP_GET", "HTTP_GET", "HTTP_GET",       // DDoS
-        "UNKNOWN_PROTOCOL", "MALFORMED_PACKET", "BUFFER_OVERFLOW"          // Attack
-    ].into_iter().map(String::from).collect();
-    
-    let anomalies = model.detect_advanced_anomalies(&suspicious_traffic, 0.01);
-    
+    //Build the context tree (train the model)
+    model.build_context_tree(&normal_traffic)?; // Using '?' operator for error propagation
+
+    println!("Model trained on normal traffic patterns.");
+
+    //Suspicious traffic for anomaly detection
+    let suspicious_traffic: Vec<String> = vec![ // Corrected type to Vec<String>
+        "TCP_SYN",
+        "TCP_RST",
+        "TCP_SYN",
+        "TCP_RST",
+        "TCP_SYN",
+        "TCP_RST",// Simulating a port scan
+        "HTTP_GET",
+        "HTTP_GET",
+        "HTTP_GET",
+        "HTTP_GET",
+        "HTTP_GET",// Simulating a (simplified) DDoS-like pattern
+        "UNKNOWN_PROTOCOL",
+        "MALFORMED_PACKET",
+        "BUFFER_OVERFLOW",// Simulating attack signatures
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect();
+
+    // Define a threshold for what constitutes a high-risk anomaly
+    // A lower likelihood generally indicates higher anomaly.
+    let anomaly_detection_threshold = 1e-6;
+
+    println!("\nAnalyzing suspicious traffic with likelihood threshold: {:.0e}", anomaly_detection_threshold);
+
+    let anomalies: Vec<AnomalyScore> = model.detect_advanced_anomalies(&suspicious_traffic, 0.01); // Note: _threshold parameter in detect_advanced_anomalies is currently unused for filtering, so manual filtering is applied below.
+
+    let mut high_risk_found = false;
     for anomaly in anomalies {
-        if anomaly.likelihood < 1e-6 {
-            println!("High-risk pattern: {:?}", anomaly.state_sequence);
-            println!("Risk score: {:.2e}", 1.0 - anomaly.likelihood);
-            println!("Information score: {:.4}", anomaly.information_theoretic_score);
+        // Manually filter based on likelihood, as the `_threshold` in `detect_advanced_anomalies`
+        // in your `lib.rs` doesn't filter the output.
+        if anomaly.likelihood < anomaly_detection_threshold {
+            high_risk_found = true;
+            println!("\n--- High-risk pattern Detected ---");
+            println!("  Sequence: {:?}", anomaly.state_sequence);
+            println!("  Risk Score (1 - Likelihood): {:.2e}", 1.0 - anomaly.likelihood);
+            println!("  Likelihood: {:.2e}", anomaly.likelihood);
+            println!("  Information Score: {:.4}", anomaly.information_theoretic_score);
+            println!("  Spectral Score: {:.4}", anomaly.spectral_anomaly_score);
+            println!("  Quantum Coherence: {:.4}", anomaly.quantum_coherence_measure);
+            println!("  Topological Signature: {:?}", anomaly.topological_signature);
+            println!("  Confidence Interval: ({:.2e}, {:.2e})", anomaly.confidence_interval.0, anomaly.confidence_interval.1);
         }
     }
-    
-    Ok(())
+
+    if !high_risk_found {
+        println!("\nNo high-risk patterns detected above the threshold of {:.0e}.", anomaly_detection_threshold);
+    }
+
+    println!("\nAnomaly detection example finished.");
+
+    Ok(()) // Indicate successful execution
 }
 ```
 
@@ -236,34 +293,63 @@ fn detect_network_anomalies() -> Result<(), Box<dyn std::error::Error>> {
 ```rust
 fn analyze_user_sessions() -> Result<(), Box<dyn std::error::Error>> {
     // Normal user behavior
-    let normal_sessions = vec![
-        "LOGIN", "DASHBOARD", "PROFILE", "SETTINGS", "LOGOUT",
-        "LOGIN", "SEARCH", "VIEW_ITEM", "ADD_CART", "CHECKOUT", "LOGOUT",
-        "LOGIN", "MESSAGES", "COMPOSE", "SEND", "LOGOUT"
-    ].into_iter().map(String::from).collect();
-    
+    let normal_sessions: Vec<String> = vec![
+        // Changed to Vec<String>
+        "LOGIN",
+        "DASHBOARD",
+        "PROFILE",
+        "SETTINGS",
+        "LOGOUT",
+        "LOGIN",
+        "SEARCH",
+        "VIEW_ITEM",
+        "ADD_CART",
+        "CHECKOUT",
+        "LOGOUT",
+        "LOGIN",
+        "MESSAGES",
+        "COMPOSE",
+        "SEND",
+        "LOGOUT",
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect();
+
     let mut model = AdvancedTransitionModel::new(3);
     model.build_context_tree(&normal_sessions)?;
-    
+
     // Detect privilege escalation
-    let suspicious_session = vec![
-        "LOGIN", "ADMIN_PANEL", "USER_LIST", "DELETE_USER", "DELETE_USER",
-        "BULK_DOWNLOAD", "BULK_DOWNLOAD", "SENSITIVE_DATA_ACCESS"
-    ].into_iter().map(String::from).collect();
-    
+    let suspicious_session: Vec<String> = vec![
+        // Changed to Vec<String>
+        "LOGIN",
+        "ADMIN_PANEL",
+        "USER_LIST",
+        "DELETE_USER",
+        "DELETE_USER",
+        "BULK_DOWNLOAD",
+        "BULK_DOWNLOAD",
+        "SENSITIVE_DATA_ACCESS",
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect();
+
     let anomalies = model.detect_advanced_anomalies(&suspicious_session, 0.05);
-    
+
     // Find behavioral anomalies
     for anomaly in anomalies {
         let risk_score = 1.0 - anomaly.likelihood;
         if risk_score > 0.95 {
             println!("Suspicious behavior: {:?}", anomaly.state_sequence);
             println!("Risk: {:.4}", risk_score);
-            println!("Confidence: [{:.2e}, {:.2e}]", 
-                     anomaly.confidence_interval.0, anomaly.confidence_interval.1);
+            println!(
+                "Confidence: [{:.2e}, {:.2e}]",
+                anomaly.confidence_interval.0, anomaly.confidence_interval.1
+            );
         }
     }
-    
+
     Ok(())
 }
 ```
@@ -273,30 +359,30 @@ fn analyze_user_sessions() -> Result<(), Box<dyn std::error::Error>> {
 ```rust
 fn detect_transaction_fraud() -> Result<(), Box<dyn std::error::Error>> {
     // Normal transaction patterns
-    let normal_transactions = vec![
+    let normal_transactions: Vec<String> = vec![ // Changed to Vec<String>
         "AUTH", "PURCHASE", "CONFIRM", "SETTLEMENT",
-        "AUTH", "ATM_WITHDRAWAL", "CONFIRM", "SETTLEMENT", 
+        "AUTH", "ATM_WITHDRAWAL", "CONFIRM", "SETTLEMENT",
         "AUTH", "ONLINE_PAYMENT", "CONFIRM", "SETTLEMENT"
     ].into_iter().map(String::from).collect();
-    
+
     // Repeat patterns for robust training
     let mut training_data = Vec::new();
     for _ in 0..20 {
         training_data.extend(normal_transactions.clone());
     }
-    
+
     let mut model = AdvancedTransitionModel::new(4);
     model.build_context_tree(&training_data)?;
-    
+
     // Test suspicious patterns
-    let test_transactions = vec![
+    let test_transactions: Vec<String> = vec![ // Changed to Vec<String>
         "AUTH", "LARGE_PURCHASE", "FOREIGN_COUNTRY", "CONFIRM",    // Unusual location
         "VELOCITY_ALERT", "AUTH", "AUTH", "AUTH", "AUTH",          // Rapid transactions
         "CARD_NOT_PRESENT", "LARGE_PURCHASE", "DECLINE", "RETRY", "RETRY" // Card testing
     ].into_iter().map(String::from).collect();
-    
+
     let anomalies = model.detect_advanced_anomalies(&test_transactions, 0.001);
-    
+
     // Calculate fraud scores
     let mut fraud_alerts: Vec<_> = anomalies.into_iter()
         .map(|a| {
@@ -305,15 +391,15 @@ fn detect_transaction_fraud() -> Result<(), Box<dyn std::error::Error>> {
         })
         .filter(|(_, score)| *score > 5.0)
         .collect();
-    
+
     fraud_alerts.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
-    
+
     for (anomaly, fraud_score) in fraud_alerts.iter().take(5) {
         println!("Fraud alert: {:?}", anomaly.state_sequence);
         println!("Fraud score: {:.4}", fraud_score);
         println!("Quantum coherence: {:.4}", anomaly.quantum_coherence_measure);
     }
-    
+
     Ok(())
 }
 ```
@@ -323,42 +409,42 @@ fn detect_transaction_fraud() -> Result<(), Box<dyn std::error::Error>> {
 ```rust
 fn analyze_system_logs() -> Result<(), Box<dyn std::error::Error>> {
     // Normal system events
-    let normal_logs = vec![
+    let normal_logs: Vec<String> = vec![ // Changed to Vec<String>
         "BOOT", "SERVICE_START", "AUTH_SUCCESS", "FILE_ACCESS", "NETWORK_CONNECT",
         "CRON_START", "BACKUP_BEGIN", "BACKUP_SUCCESS", "CRON_END",
         "HEALTH_CHECK", "MONITOR_CLEAR", "SERVICE_HEALTHY"
     ].into_iter().map(String::from).collect();
-    
+
     // Build robust training set
     let mut training_logs = Vec::new();
     for _ in 0..50 {
         training_logs.extend(normal_logs.clone());
     }
-    
+
     let mut model = AdvancedTransitionModel::new(5);
     model.build_context_tree(&training_logs)?;
-    
+
     // Test with security incidents
     let mut test_logs = training_logs.clone();
     test_logs.extend(vec![
         "UNAUTHORIZED_ACCESS", "PRIVILEGE_ESCALATION", "FILE_CORRUPTION",
-        "SERVICE_CRASH", "SERVICE_CRASH", "SERVICE_CRASH",  // Repeated crashes
+        "SERVICE_CRASH", "SERVICE_CRASH", "SERVICE_CRASH",  //Repeated crashes
         "ROOTKIT_DETECTED", "MALWARE_POSITIVE", "CONFIG_TAMPERED"
-    ].into_iter().map(String::from));
-    
+    ].into_iter().map(String::from)); // This `vec![]` is fine because `extend` takes an iterator
+
     let anomalies = model.detect_advanced_anomalies(&test_logs, 0.01);
-    
+
     // Filter critical anomalies
     let critical: Vec<_> = anomalies.into_iter()
         .filter(|a| a.likelihood < 1e-8)
         .collect();
-    
+
     for anomaly in critical {
         println!("Critical system event: {:?}", anomaly.state_sequence);
         println!("Severity: {:.2e}", 1.0 / anomaly.likelihood);
         println!("Topological signature: {:?}", anomaly.topological_signature);
     }
-    
+
     Ok(())
 }
 ```
@@ -368,47 +454,47 @@ fn analyze_system_logs() -> Result<(), Box<dyn std::error::Error>> {
 ```rust
 fn analyze_genetic_sequences() -> Result<(), Box<dyn std::error::Error>> {
     // Normal gene patterns (start codon -> coding -> stop codon)
-    let normal_genes = vec![
+    let normal_genes: Vec<String> = vec![ // Changed to Vec<String>
         "ATG", "CGA", "TTC", "AAG", "GCT", "TAA",  // Gene 1
         "ATG", "CCG", "ATC", "GGC", "TTC", "TAG",  // Gene 2
         "ATG", "GAA", "CTG", "TGC", "CAG", "TGA"   // Gene 3
     ].into_iter().map(String::from).collect();
-    
+
     // Replicate for statistical significance
     let mut training_dna = Vec::new();
     for _ in 0..100 {
         training_dna.extend(normal_genes.clone());
     }
-    
+
     let mut model = AdvancedTransitionModel::new(6);  // Longer context for codons
     model.build_context_tree(&training_dna)?;
-    
+
     // Test with mutations
-    let test_dna = vec![
+    let test_dna: Vec<String> = vec![ // Changed to Vec<String>
         "XTG", "CGA", "TTC", "AAG", "GCT", "TAA",  // Invalid nucleotide
         "ATG", "CGA", "TTC", "AAG", "GCT",         // Missing stop codon
         "ATG", "ATG", "ATG", "ATG", "TAA",         // Repeated start codons
         "NNN", "UUU", "QQQ"                        // Invalid sequence
     ].into_iter().map(String::from).collect();
-    
+
     let mutations = model.detect_advanced_anomalies(&test_dna, 0.01);
-    
+
     for mutation in mutations {
         let mutation_prob = 1.0 - mutation.likelihood;
         println!("Genetic anomaly: {:?}", mutation.state_sequence);
         println!("Mutation probability: {:.2e}", mutation_prob);
-        
+
         // Check specific mutation types
         let seq_str = mutation.state_sequence.join("");
         if seq_str.contains("X") || seq_str.contains("N") || seq_str.contains("U") {
             println!("  -> Invalid nucleotide detected");
         }
-        if seq_str.starts_with("ATG") && !seq_str.contains("TAA") && 
+        if seq_str.starts_with("ATG") && !seq_str.contains("TAA") &&
            !seq_str.contains("TAG") && !seq_str.contains("TGA") {
             println!("  -> Missing stop codon");
         }
     }
-    
+
     Ok(())
 }
 ```

@@ -7,11 +7,11 @@
     ██╔══██║██║╚██╗██║██║   ██║██║╚██╔╝██║██╔══██║██║    ╚██╔╝  
     ██║  ██║██║ ╚████║╚██████╔╝██║ ╚═╝ ██║██║  ██║███████╗██║   
     ╚═╝  ╚═╝╚═╝  ╚═══╝ ╚═════╝ ╚═╝     ╚═╝╚═╝  ╚═╝╚══════╝╚═╝   
-    [ANOMALY-GRID v0.1.0] - SEQUENCE ANOMALY DETECTION ENGINE
+    [ANOMALY-GRID v0.1.3] - SEQUENCE ANOMALY DETECTION ENGINE
 ```
 
 [![Crates.io](https://img.shields.io/crates/v/anomaly-grid)](https://crates.io/crates/anomaly-grid)
-[![Documentation](https://docs.rs/anomaly-grid/badge.svg)](https://docs.rs/anomaly-grid/0.1.2)
+[![Documentation](https://docs.rs/anomaly-grid/badge.svg)](https://docs.rs/anomaly-grid/0.1.3)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 **Sequential pattern analysis through variable-order Markov chains with spectral decomposition and quantum state modeling. Built for detecting deviations in finite-alphabet sequences.**
@@ -172,7 +172,7 @@ let results = batch_process_sequences(&sequences, 3, 0.05);
 
 ```toml
 [dependencies]
-anomaly-grid = "0.1.2"
+anomaly-grid = "0.1.3"
 
 # Or add manually:
 nalgebra = "0.33.2"  # Linear algebra operations
