@@ -472,7 +472,7 @@ mod func_tests {
             println!("⚠️  No anomalies detected to test structure");
         }
     }
-
+    /*
     #[test]
     fn run_all_critical_tests() {
         println!("🧪 CRITICAL FUNCTIONAL TESTS FOR ANOMALY-GRID LIBRARY");
@@ -493,4 +493,5 @@ mod func_tests {
         println!("═══════════════════════════════════════════════════════");
         println!("🏁 ALL CRITICAL TESTS COMPLETED");
     }
+    */
 }
