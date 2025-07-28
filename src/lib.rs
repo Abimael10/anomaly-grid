@@ -120,21 +120,6 @@ impl AdvancedTransitionModel {
         Ok(())
     }
 
-    //helper function:
-    // Normalize matrix rows to sum to 1 (make stochastic)
-    fn normalize_matrix_rows(&self, matrix: &DMatrix<f64>) -> DMatrix<f64> {
-        let mut normalized = matrix.clone();
-        for i in 0..normalized.nrows() {
-            let row_sum: f64 = normalized.row(i).sum();
-            if row_sum > 1e-15 {
-                for j in 0..normalized.ncols() {
-                    normalized[(i, j)] /= row_sum;
-                }
-            }
-        }
-        normalized
-    }
-
     /// Perform spectral analysis of the transition matrix
     fn perform_spectral_analysis(&mut self) -> Result<(), String> {
         // Early return if no contexts exist
@@ -143,8 +128,8 @@ impl AdvancedTransitionModel {
         }
 
         let matrix = match self.build_dense_transition_matrix() {
-            Ok(m) => self.normalize_matrix_rows(&m),
-            Err(_) => return Ok(()),
+            Ok(m) => m,
+            Err(_) => return Ok(()), // Don't fail the entire process
         };
 
         // Skip if matrix is empty
@@ -166,20 +151,15 @@ impl AdvancedTransitionModel {
             0.0
         };
 
-        let mixing_time = if sorted_eigenvals.len() > 1 {
-            let lambda_2 = sorted_eigenvals[1];
-            if lambda_2 > 1e-10 && lambda_2 < 1.0 {
-                (-0.368_f64.ln() / lambda_2.ln()).min(1000.0) // Use 1/e threshold
-            } else {
-                f64::INFINITY
-            }
+        let mixing_time = if spectral_gap > 1e-10 {
+            (1.0 / spectral_gap).ln().min(1000.0) // Cap at reasonable value
         } else {
             f64::INFINITY
         };
 
         self.spectral_decomposition = Some(SpectralAnalysis {
             eigenvalues,
-            eigenvectors: matrix.clone_owned().map(|v| Complex::new(v, 0.0)),
+            eigenvectors: DMatrix::zeros(0, 0),
             stationary_distribution: stationary_dist,
             mixing_time,
             spectral_gap,
