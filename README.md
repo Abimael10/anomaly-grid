@@ -558,8 +558,6 @@ cd anomaly-grid
 cargo build --release
 cargo test
 
-# Run comprehensive benchmarks
-cargo test run_all_comprehensive_tests -- --nocapture --ignored
 ```
 
 ## 📄 License
