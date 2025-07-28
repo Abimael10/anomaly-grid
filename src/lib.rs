@@ -298,13 +298,9 @@ impl AdvancedTransitionModel {
                 let context = sequence[i - context_len..i].to_vec();
                 if let Some(node) = self.contexts.get(&context) {
                     if let Some(&prob) = node.probabilities.get(&sequence[i]) {
-                        // FIX: This corrected logic penalizes contexts with low counts,
-                        // correctly identifying rare transitions as low-likelihood events.
-                        let total_support: usize = node.counts.values().sum();
-                        if total_support > 0 {
-                            let weighted_prob = prob / (total_support as f64).sqrt();
-                            best_prob = best_prob.max(weighted_prob);
-                        }
+                        //  removed mathematically invalid sqrt division
+                        // Using the raw probability - it iss already the maximum likelihood estimate
+                        best_prob = best_prob.max(prob);
                     }
                 }
             }
