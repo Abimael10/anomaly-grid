@@ -5,7 +5,7 @@
 ╔════════════════════════════════════════════════════╗
 ║                   anomaly-grid                     ║
 ║           Sequential Anomaly Detection             ║
-║                   Library v0.1.5                   ║
+║                   Library v0.1.7                   ║
 ╚════════════════════════════════════════════════════╝
 ```
 
@@ -658,7 +658,7 @@ The library validates:
 - Very short sequences (<20 elements)  
 - Real-time applications requiring microsecond responses
 - Datasets with >1000 unique symbols
-- Applications requiring explainable AI compliance
+- Applications requiring explainable AI compliance - Like NOPE
 
 ---
 

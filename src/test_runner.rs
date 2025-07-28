@@ -526,7 +526,7 @@ fn test_dna_sequence_analysis() {
 
     // Topological analysis of DNA structure
     println!("\n🔬 Genetic Structure Analysis:");
-    let unique_states = model.get_unique_states();
+    let unique_states = &model.id_to_state;
     println!("   Unique codons observed: {}", unique_states.len());
 
     if let Some(spectral) = &model.spectral_decomposition {

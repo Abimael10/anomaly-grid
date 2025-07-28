@@ -7,30 +7,30 @@
     ██╔══██║██║╚██╗██║██║   ██║██║╚██╔╝██║██╔══██║██║    ╚██╔╝  
     ██║  ██║██║ ╚████║╚██████╔╝██║ ╚═╝ ██║██║  ██║███████╗██║   
     ╚═╝  ╚═╝╚═╝  ╚═══╝ ╚═════╝ ╚═╝     ╚═╝╚═╝  ╚═╝╚══════╝╚═╝   
-    [ANOMALY-GRID v0.1.5] - SEQUENCE ANOMALY DETECTION ENGINE
+    [ANOMALY-GRID v0.1.7] - SEQUENCE ANOMALY DETECTION ENGINE
 ```
 
 [![Crates.io](https://img.shields.io/crates/v/anomaly-grid)](https://crates.io/crates/anomaly-grid)
-[![Documentation](https://docs.rs/anomaly-grid/badge.svg)](https://docs.rs/anomaly-grid/0.1.5)
+[![Documentation](https://docs.rs/anomaly-grid/badge.svg)](https://docs.rs/anomaly-grid/0.1.7)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 **Sequential pattern analysis through variable-order Markov chains with spectral decomposition and quantum state modeling. Built for detecting deviations in finite-alphabet sequences.**
 
 ---
 
-
+```
 ⚠️ Development Status
 This library is currently in active development and represents ongoing improve of my knowledge in advanced anomaly detection methodologies. While the core algorithms are mathematically sound and extensively tested, there are areas that require further optimization and refinement.
 I acknowledge that complex mathematical implementations can present edge cases and unexpected behaviors. If you encounter any issues, inconsistencies, or have suggestions for improvement, please don't hesitate to reach me out. Your feedback is invaluable for enhancing the library's robustness and reliability.
 Known areas for improvement:
 
-Spectral analysis convergence in edge cases
-Memory optimization for large state spaces
-Performance tuning for specific use cases
-Documentation clarity and completeness
+-Spectral analysis convergence in edge cases
+-Memory optimization for large state spaces
+-Performance tuning for specific use cases
+-Documentation clarity and completeness
 
 Contact: Please file issues on my repository or reach out directly for technical discussions, bug reports, or collaboration opportunities. I am committed to continuous improvement and appreciate your patience as I or we (hopefully) refine this research implementation.
-
+```
 
 ## 🚀 Quick Start
 
@@ -172,7 +172,7 @@ let results = batch_process_sequences(&sequences, 3, 0.05);
 
 ```toml
 [dependencies]
-anomaly-grid = "0.1.5"
+anomaly-grid = "0.1.7"
 
 # Or add manually:
 nalgebra = "0.33.2"  # Linear algebra operations
@@ -548,19 +548,6 @@ fn your_function() {
 - **[User Manual](USER_MANUAL.md)**: Comprehensive developer guide with examples
 - **[API Documentation](https://docs.rs/anomaly-grid)**: Generated from source code
 
-## 📈 Roadmap
-
-### Version 0.2.0 (Planned)
-- [ ] Streaming anomaly detection for real-time systems
-- [ ] Advanced topological analysis with true persistent homology
-- [ ] GPU acceleration for large-scale datasets
-- [ ] Integration with popular ML frameworks (PyTorch, TensorFlow)
-
-### Version 0.3.0 (Future)
-- [ ] Distributed processing across multiple machines
-- [ ] Advanced quantum algorithms for state analysis
-- [ ] Automated hyperparameter optimization
-- [ ] Web-based visualization dashboard
 
 ## 🤝 Contributing
 
