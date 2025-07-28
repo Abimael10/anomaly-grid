@@ -32,7 +32,7 @@ This library is currently in active development and represents ongoing explorati
 - Maximum sequence length: 200 elements
 - Maximum contexts: 500 per model
 - Maximum order: Capped at 3 regardless of input (This for simple tests at the beginning since it can scale quickly without it and I do not count with enough computing to process that right now! This will change quickly and can be edited fairly easy too).
-- Spectral analysis: Simplified fallback implementation
+- Spectral analysis: Simplified fallback implementation.
 
 Contact: Please file issues on the repository or reach out directly for technical discussions, bug reports, or collaboration opportunities.
 
