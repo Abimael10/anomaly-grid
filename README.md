@@ -226,12 +226,6 @@ for anomaly in anomalies {
 # Run all tests with detailed output
 cargo test -- --nocapture
 
-# Individual test categories
-cargo test test_network_traffic_anomalies     # Network security
-cargo test test_user_behavior_patterns        # Behavioral analysis
-cargo test test_financial_transaction_patterns # Fraud detection
-cargo test test_dna_sequence_analysis         # Bioinformatics
-cargo test test_performance_benchmarks        # Scaling analysis
 ```
 
 ### Mathematical Validation
