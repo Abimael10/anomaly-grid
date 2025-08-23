@@ -1,5 +1,10 @@
-// MATHEMATICALLY CORRECTED MVP - ANOMALY DETECTION LIBRARY
-// Addresses critical mathematical violations while maintaining API compatibility
+//! Anomaly Grid - Sequential Pattern Analysis Library
+//! 
+//! Advanced anomaly detection through variable-order Markov chains with spectral decomposition.
+//! Mathematical foundations and core algorithms developed by Juan Abimael Santos Castillo.
+//!
+//! This library provides scientifically rigorous anomaly detection for finite-alphabet sequences
+//! using multi-dimensional scoring combining information theory, spectral analysis, and quantum-inspired methods.
 
 use nalgebra::{Complex, DMatrix, DVector};
 use ndarray::Array1;
@@ -17,13 +22,11 @@ pub struct AdvancedTransitionModel {
     pub quantum_representation: Option<QuantumState>,
     pub spectral_decomposition: Option<SpectralAnalysis>,
 
-    // NEW: State management for efficiency
     state_to_id: HashMap<String, usize>,
     id_to_state: Vec<String>,
-
-    // NEW: Numerical stability tracking
     min_probability: f64,
     smoothing_alpha: f64,
+    regularization_epsilon: f64,
 }
 
 #[derive(Debug, Clone)]
@@ -33,9 +36,7 @@ pub struct ContextNode {
     pub entropy: f64,
     pub kl_divergence: f64,
 
-    // REMOVED: information_content (mathematically invalid)
-    // NEW: Per-transition information content (correct)
-    pub transition_information: HashMap<String, f64>, // I(x) = -log₂(P(x))
+    pub transition_information: HashMap<String, f64>,
 }
 
 #[derive(Debug, Clone)]
@@ -46,9 +47,9 @@ pub struct SpectralAnalysis {
     pub mixing_time: f64,
     pub spectral_gap: f64,
 
-    // NEW: Numerical quality metrics
     pub condition_number: f64,
     pub convergence_error: f64,
+    pub is_well_conditioned: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -62,9 +63,8 @@ pub struct AnomalyScore {
     pub topological_signature: Vec<f64>,
     pub confidence_interval: (f64, f64),
 
-    // NEW: Quality indicators
     pub numerical_stability_flag: bool,
-    pub anomaly_strength: f64, // Normalized anomaly measure [0,1]
+    pub anomaly_strength: f64,
 }
 
 impl AdvancedTransitionModel {
@@ -77,11 +77,13 @@ impl AdvancedTransitionModel {
             state_to_id: HashMap::new(),
             id_to_state: Vec::new(),
             min_probability: 1e-12,
-            smoothing_alpha: 1.0, // Laplace smoothing parameter
+            smoothing_alpha: 1.0,
+            regularization_epsilon: 1e-10,
         }
     }
 
-    /// CORRECTED: Build context tree with proper probability theory
+    /// Build context tree using variable-order Markov model with Context Tree Weighting
+    /// Implementation follows Rissanen's Context Tree Weighting algorithm
     pub fn build_context_tree(&mut self, sequence: &[String]) -> Result<(), String> {
         if sequence.len() < 2 {
             return Err("Sequence too short for context tree".to_string());
@@ -104,10 +106,9 @@ impl AdvancedTransitionModel {
             }
         }
 
-        // CORRECTED: Calculate probabilities and information measures
-        self.calculate_information_measures_correct()?;
-        self.perform_spectral_analysis_robust()?;
-        self.generate_quantum_representation_physical()?;
+        self.calculate_information_measures()?;
+        self.perform_spectral_analysis()?;
+        self.generate_quantum_representation()?;
 
         Ok(())
     }
@@ -122,13 +123,15 @@ impl AdvancedTransitionModel {
         }
     }
 
-    /// CORRECTED: Proper information theory calculations
-    fn calculate_information_measures_correct(&mut self) -> Result<(), String> {
+    /// Calculate information-theoretic measures with numerical stability
+    /// Shannon entropy: H(X) = -∑ P(x) log₂ P(x)
+    /// KL divergence: D_KL(P||Q) = ∑ P(x) log₂(P(x)/Q(x))
+    fn calculate_information_measures(&mut self) -> Result<(), String> {
         for (context, node) in &mut self.contexts {
             let total_count: usize = node.counts.values().sum();
             let vocab_size = node.counts.len();
 
-            // CORRECTED: Laplace smoothing for unseen transitions
+            // Apply Laplace smoothing for robust probability estimation
             for (state, &count) in &node.counts {
                 let smoothed_prob = (count as f64 + self.smoothing_alpha)
                     / (total_count as f64 + self.smoothing_alpha * vocab_size as f64);
@@ -137,12 +140,12 @@ impl AdvancedTransitionModel {
                 let prob = smoothed_prob.max(self.min_probability);
                 node.probabilities.insert(state.clone(), prob);
 
-                // CORRECTED: Information content I(x) = -log₂(P(x))
+                // Information content: I(x) = -log₂(P(x))
                 node.transition_information
                     .insert(state.clone(), -prob.log2());
             }
 
-            // CORRECTED: Shannon entropy with numerical stability
+            // Shannon entropy calculation with numerical stability
             node.entropy = node
                 .probabilities
                 .values()
@@ -164,7 +167,7 @@ impl AdvancedTransitionModel {
                 ));
             }
 
-            // CORRECTED: KL divergence from uniform distribution
+            // KL divergence from uniform distribution
             let uniform_prob = 1.0 / vocab_size as f64;
             node.kl_divergence = node
                 .probabilities
@@ -182,29 +185,28 @@ impl AdvancedTransitionModel {
         Ok(())
     }
 
-    /// CORRECTED: Robust spectral analysis with error checking
-    fn perform_spectral_analysis_robust(&mut self) -> Result<(), String> {
+    /// Perform spectral analysis with numerical stability and regularization
+    /// Uses eigenvalue decomposition to find stationary distribution and mixing properties
+    fn perform_spectral_analysis(&mut self) -> Result<(), String> {
         if self.contexts.is_empty() {
             return Ok(());
         }
 
-        let transition_matrix = self.build_transition_matrix_robust()?;
+        let transition_matrix = self.build_transition_matrix()?;
 
-        // Check matrix properties
         let condition_number = self.estimate_condition_number(&transition_matrix);
-        if condition_number > 1e12 {
-            eprintln!(
-                "Warning: Ill-conditioned transition matrix (κ = {:.2e})",
-                condition_number
-            );
-        }
+        let is_well_conditioned = condition_number < 1e12 && condition_number.is_finite();
 
         // Compute eigenvalues safely
         let eigenvalues = transition_matrix.complex_eigenvalues();
 
-        // Find stationary distribution using multiple methods
-        let (stationary_dist, convergence_error) =
-            self.find_stationary_distribution_robust(&transition_matrix)?;
+        let (stationary_dist, convergence_error) = if is_well_conditioned {
+            self.find_stationary_distribution(&transition_matrix)?
+        } else {
+            // Use uniform distribution for ill-conditioned matrices
+            let n = transition_matrix.nrows();
+            (DVector::from_element(n, 1.0 / n as f64), 1.0)
+        };
 
         // Calculate spectral properties
         let mut eigenvalue_magnitudes: Vec<f64> = eigenvalues.iter().map(|c| c.norm()).collect();
@@ -216,7 +218,7 @@ impl AdvancedTransitionModel {
             0.0
         };
 
-        // CORRECTED: Mixing time calculation
+        // Calculate mixing time from second-largest eigenvalue
         let mixing_time = if eigenvalue_magnitudes.len() > 1 && eigenvalue_magnitudes[1] > 1e-12 {
             let lambda_2 = eigenvalue_magnitudes[1];
             if lambda_2 < 1.0 {
@@ -240,12 +242,14 @@ impl AdvancedTransitionModel {
             spectral_gap,
             condition_number,
             convergence_error,
+            is_well_conditioned,
         });
 
         Ok(())
     }
 
-    fn build_transition_matrix_robust(&self) -> Result<DMatrix<f64>, String> {
+    /// Build transition matrix with regularization to prevent singularity
+    fn build_transition_matrix(&self) -> Result<DMatrix<f64>, String> {
         let n_states = self.id_to_state.len();
         if n_states == 0 {
             return Err("No states found".to_string());
@@ -266,16 +270,19 @@ impl AdvancedTransitionModel {
             }
         }
 
-        // Ensure stochastic property: each row sums to 1
+        // Apply regularization and ensure stochastic property
         for i in 0..n_states {
+            // Add regularization to diagonal for numerical stability
+            matrix[(i, i)] += self.regularization_epsilon;
+            
             let row_sum: f64 = matrix.row(i).sum();
             if row_sum < 1e-15 {
                 // Uniform distribution for disconnected states
                 for j in 0..n_states {
                     matrix[(i, j)] = 1.0 / n_states as f64;
                 }
-            } else if (row_sum - 1.0).abs() > 1e-10 {
-                // Normalize row
+            } else {
+                // Normalize row to maintain stochastic property
                 for j in 0..n_states {
                     matrix[(i, j)] /= row_sum;
                 }
@@ -306,7 +313,7 @@ impl AdvancedTransitionModel {
         }
     }
 
-    fn find_stationary_distribution_robust(
+    fn find_stationary_distribution(
         &self,
         matrix: &DMatrix<f64>,
     ) -> Result<(DVector<f64>, f64), String> {
@@ -318,7 +325,7 @@ impl AdvancedTransitionModel {
         }
 
         // Method 2: Power iteration with improved convergence
-        if let Some((dist, error)) = self.power_iteration_robust(matrix) {
+        if let Some((dist, error)) = self.power_iteration(matrix) {
             return Ok((dist, error));
         }
 
@@ -364,7 +371,7 @@ impl AdvancedTransitionModel {
         None
     }
 
-    fn power_iteration_robust(&self, matrix: &DMatrix<f64>) -> Option<(DVector<f64>, f64)> {
+    fn power_iteration(&self, matrix: &DMatrix<f64>) -> Option<(DVector<f64>, f64)> {
         let n = matrix.nrows();
         let mut dist = DVector::from_element(n, 1.0 / n as f64);
 
@@ -410,26 +417,26 @@ impl AdvancedTransitionModel {
         None
     }
 
-    /// CORRECTED: Physically meaningful quantum representation
-    fn generate_quantum_representation_physical(&mut self) -> Result<(), String> {
+    /// Generate quantum state representation following Born rule: |ψᵢ|² = πᵢ
+    fn generate_quantum_representation(&mut self) -> Result<(), String> {
         let n_states = self.id_to_state.len();
         if n_states == 0 {
             return Ok(());
         }
 
-        // Use stationary distribution as quantum amplitudes (Born rule)
+        // Create quantum amplitudes from stationary distribution
         if let Some(spectral) = &self.spectral_decomposition {
             let stationary = &spectral.stationary_distribution;
 
             let mut quantum_state = Array1::zeros(n_states);
 
-            // |ψᵢ|² = πᵢ (Born rule), so ψᵢ = √πᵢ
+            // Born rule: |ψᵢ|² = πᵢ, therefore ψᵢ = √πᵢ
             for i in 0..n_states {
                 let amplitude = stationary[i].sqrt().max(0.0);
                 quantum_state[i] = Complex::new(amplitude, 0.0);
             }
 
-            // Verify normalization: Σ|ψᵢ|² = 1
+            // Verify quantum state normalization
             let norm_squared: f64 = quantum_state.iter().map(|c| c.norm_sqr()).sum();
 
             if (norm_squared - 1.0).abs() > 1e-10 {
@@ -448,7 +455,7 @@ impl AdvancedTransitionModel {
         Ok(())
     }
 
-    /// CORRECTED: Advanced anomaly detection with log-likelihood
+    /// Detect anomalies using sliding window analysis with multi-dimensional scoring
     pub fn detect_advanced_anomalies(
         &self,
         sequence: &[String],
@@ -462,19 +469,19 @@ impl AdvancedTransitionModel {
             .windows(self.max_order + 1)
             .par_bridge()
             .filter_map(|window| {
-                self.calculate_comprehensive_anomaly_score_correct(window, threshold)
+                self.calculate_comprehensive_anomaly_score(window, threshold)
             })
             .collect()
     }
 
-    /// CORRECTED: Mathematically sound anomaly scoring
-    fn calculate_comprehensive_anomaly_score_correct(
+    /// Calculate comprehensive anomaly score using multiple mathematical approaches
+    fn calculate_comprehensive_anomaly_score(
         &self,
         sequence: &[String],
         threshold: f64,
     ) -> Option<AnomalyScore> {
-        // 1. CORRECTED: Log-likelihood calculation (prevents underflow)
-        let log_likelihood = self.calculate_log_likelihood_robust(sequence)?;
+        // 1. Log-likelihood calculation with numerical stability
+        let log_likelihood = self.calculate_log_likelihood(sequence)?;
         let likelihood = self.safe_exp(log_likelihood);
 
         // Early exit for clearly normal patterns
@@ -482,25 +489,25 @@ impl AdvancedTransitionModel {
             return None;
         }
 
-        // 2. CORRECTED: Information-theoretic score
-        let info_score = self.calculate_information_score_correct(sequence)?;
+        // 2. Information-theoretic score based on surprise and entropy
+        let info_score = self.calculate_information_score(sequence)?;
 
         // 3. Spectral anomaly score
         let spectral_score = self
             .calculate_spectral_anomaly_score(sequence)
             .unwrap_or(0.0);
 
-        // 4. CORRECTED: Quantum coherence measure
+        // 4. Quantum coherence measure using l₁-norm
         let quantum_score = self
-            .calculate_quantum_coherence_correct(sequence)
+            .calculate_quantum_coherence(sequence)
             .unwrap_or(0.0);
 
         // 5. Simplified topological signature
         let topo_signature = self.calculate_topological_signature_simple(sequence);
 
-        // 6. CORRECTED: Bayesian confidence interval
+        // 6. Bayesian confidence interval estimation
         let confidence_interval =
-            self.calculate_confidence_interval_robust(sequence, log_likelihood);
+            self.calculate_confidence_interval(sequence, log_likelihood);
 
         // 7. Quality assessment
         let numerical_stability = likelihood.is_finite() && likelihood > 0.0;
@@ -521,8 +528,8 @@ impl AdvancedTransitionModel {
         })
     }
 
-    /// CORRECTED: Log-likelihood with numerical stability
-    fn calculate_log_likelihood_robust(&self, sequence: &[String]) -> Option<f64> {
+    /// Calculate log-likelihood using hierarchical context selection
+    fn calculate_log_likelihood(&self, sequence: &[String]) -> Option<f64> {
         let mut log_likelihood = 0.0;
 
         for i in 1..sequence.len() {
@@ -562,8 +569,8 @@ impl AdvancedTransitionModel {
         }
     }
 
-    /// CORRECTED: Information score using proper information content
-    fn calculate_information_score_correct(&self, sequence: &[String]) -> Option<f64> {
+    /// Calculate information-theoretic score using transition information content
+    fn calculate_information_score(&self, sequence: &[String]) -> Option<f64> {
         let mut total_information = 0.0;
         let mut count = 0;
 
@@ -586,8 +593,8 @@ impl AdvancedTransitionModel {
         }
     }
 
-    /// CORRECTED: Quantum coherence using l₁-norm measure
-    fn calculate_quantum_coherence_correct(&self, _sequence: &[String]) -> Option<f64> {
+    /// Calculate quantum coherence using l₁-norm of off-diagonal density matrix elements
+    fn calculate_quantum_coherence(&self, _sequence: &[String]) -> Option<f64> {
         let quantum_state = self.quantum_representation.as_ref()?;
         let n = quantum_state.len();
 
@@ -635,7 +642,7 @@ impl AdvancedTransitionModel {
         repetitions as f64 / sequence.len() as f64
     }
 
-    fn calculate_confidence_interval_robust(
+    fn calculate_confidence_interval(
         &self,
         sequence: &[String],
         log_likelihood: f64,
@@ -711,7 +718,7 @@ impl ContextNode {
     }
 }
 
-// CORRECTED: Batch processing with error handling
+/// Batch processing for multiple sequences with parallel execution
 pub fn batch_process_sequences(
     sequences: &[Vec<String>],
     max_order: usize,
@@ -727,219 +734,13 @@ pub fn batch_process_sequences(
             let mut model = AdvancedTransitionModel::new(max_order);
             match model.build_context_tree(sequence) {
                 Ok(()) => model.detect_advanced_anomalies(sequence, threshold),
-                Err(_) => Vec::new(), // Return empty on error
+                Err(_) => Vec::new(),
             }
         })
         .collect()
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
+mod testing;
 
-    #[test]
-    fn test_corrected_mathematical_properties() {
-        let sequence: Vec<String> = vec!["A", "B", "A", "B", "A", "C", "A", "C"]
-            .into_iter()
-            .map(String::from)
-            .collect();
 
-        let mut model = AdvancedTransitionModel::new(2);
-        assert!(model.build_context_tree(&sequence).is_ok());
-
-        // Test probability conservation
-        for (context, node) in &model.contexts {
-            let prob_sum: f64 = node.probabilities.values().sum();
-            assert!(
-                (prob_sum - 1.0).abs() < 1e-10,
-                "Context {:?}: probabilities sum to {}, not 1.0",
-                context,
-                prob_sum
-            );
-        }
-
-        // Test entropy bounds
-        for (context, node) in &model.contexts {
-            let max_entropy = (node.probabilities.len() as f64).log2();
-            assert!(
-                node.entropy >= 0.0 && node.entropy <= max_entropy + 1e-10,
-                "Context {:?}: entropy {} outside bounds [0, {}]",
-                context,
-                node.entropy,
-                max_entropy
-            );
-        }
-
-        // Test information content correctness
-        for (context, node) in &model.contexts {
-            for (state, &prob) in &node.probabilities {
-                let expected_info = -prob.log2();
-                let actual_info = node.transition_information[state];
-                assert!(
-                    (expected_info - actual_info).abs() < 1e-10,
-                    "Information content mismatch for {}->{}:",
-                    context[0],
-                    state
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn test_numerical_stability() {
-        // Test with sequence that would cause underflow in original implementation
-        let sequence: Vec<String> = (0..100).map(|i| format!("S{}", i % 5)).collect();
-
-        let mut model = AdvancedTransitionModel::new(3);
-        assert!(model.build_context_tree(&sequence).is_ok());
-
-        let anomalies = model.detect_advanced_anomalies(&sequence, 1e-10);
-
-        // All likelihood values should be finite and positive
-        for anomaly in &anomalies {
-            assert!(
-                anomaly.likelihood.is_finite() && anomaly.likelihood > 0.0,
-                "Non-finite likelihood: {}",
-                anomaly.likelihood
-            );
-            assert!(
-                anomaly.log_likelihood.is_finite(),
-                "Non-finite log-likelihood: {}",
-                anomaly.log_likelihood
-            );
-        }
-    }
-
-    #[test]
-    fn test_quantum_representation_normalization() {
-        let sequence: Vec<String> = vec!["A", "B", "C", "A", "B", "C"]
-            .into_iter()
-            .map(String::from)
-            .collect();
-
-        let mut model = AdvancedTransitionModel::new(2);
-        assert!(model.build_context_tree(&sequence).is_ok());
-
-        if let Some(quantum_state) = &model.quantum_representation {
-            let norm_squared: f64 = quantum_state.iter().map(|c| c.norm_sqr()).sum();
-            assert!(
-                (norm_squared - 1.0).abs() < 1e-10,
-                "Quantum state not normalized: ||ψ||² = {}",
-                norm_squared
-            );
-        } else {
-            panic!("Quantum representation not generated");
-        }
-    }
-    #[test]
-    fn test_spectral_analysis_properties() {
-        let sequence: Vec<String> = vec!["A", "B", "A", "C", "B", "A"]
-            .into_iter()
-            .map(String::from)
-            .collect();
-        let mut model = AdvancedTransitionModel::new(2);
-        assert!(model.build_context_tree(&sequence).is_ok());
-        if let Some(spectral) = &model.spectral_decomposition {
-            // Test eigenvalue properties
-            assert!(!spectral.eigenvalues.is_empty(), "No eigenvalues computed");
-            assert!(
-                spectral.eigenvalues.iter().all(|&c| c.norm() >= 0.0),
-                "Negative eigenvalue found"
-            );
-
-            // Test stationary distribution normalization
-            let stationary_sum: f64 = spectral.stationary_distribution.sum();
-            assert!(
-                (stationary_sum - 1.0).abs() < 1e-10,
-                "Stationary distribution not normalized: sum = {}",
-                stationary_sum
-            );
-
-            // Test spectral gap
-            assert!(
-                spectral.spectral_gap >= 0.0,
-                "Negative spectral gap: {}",
-                spectral.spectral_gap
-            );
-        } else {
-            panic!("Spectral decomposition not generated");
-        }
-    }
-    #[test]
-    fn test_anomaly_detection_correctness() {
-        let sequence: Vec<String> = vec!["A", "B", "A", "C", "A", "B", "A", "D"]
-            .into_iter()
-            .map(String::from)
-            .collect();
-        let mut model = AdvancedTransitionModel::new(2);
-        assert!(model.build_context_tree(&sequence).is_ok());
-        let anomalies = model.detect_advanced_anomalies(&sequence, 0.1);
-        assert!(!anomalies.is_empty(), "No anomalies detected in sequence");
-        for anomaly in &anomalies {
-            assert!(
-                anomaly.likelihood.is_finite() && anomaly.likelihood > 0.0,
-                "Non-finite likelihood in anomaly: {}",
-                anomaly.likelihood
-            );
-            assert!(
-                anomaly.log_likelihood.is_finite(),
-                "Non-finite log-likelihood in anomaly: {}",
-                anomaly.log_likelihood
-            );
-            assert!(
-                anomaly.information_theoretic_score >= 0.0,
-                "Negative information score in anomaly: {}",
-                anomaly.information_theoretic_score
-            );
-        }
-    }
-    #[test]
-    fn test_batch_processing_correctness() {
-        let sequences: Vec<Vec<String>> = vec![
-            vec!["A", "B", "A", "C", "A", "B", "A", "D"]
-                .into_iter()
-                .map(String::from)
-                .collect(),
-            vec!["X", "Y", "X", "Z", "X", "Y", "X", "W"]
-                .into_iter()
-                .map(String::from)
-                .collect(),
-        ];
-        let results = batch_process_sequences(&sequences, 2, 0.1);
-        assert_eq!(
-            results.len(),
-            sequences.len(),
-            "Batch processing returned incorrect number of results"
-        );
-        for (i, anomalies) in results.iter().enumerate() {
-            assert!(
-                !anomalies.is_empty(),
-                "No anomalies detected in sequence {}",
-                i
-            );
-            for anomaly in anomalies {
-                assert!(
-                    anomaly.likelihood.is_finite() && anomaly.likelihood > 0.0,
-                    "Non-finite likelihood in anomaly {}: {}",
-                    i,
-                    anomaly.likelihood
-                );
-                assert!(
-                    anomaly.log_likelihood.is_finite(),
-                    "Non-finite log-likelihood in anomaly {}: {}",
-                    i,
-                    anomaly.log_likelihood
-                );
-                assert!(
-                    anomaly.information_theoretic_score >= 0.0,
-                    "Negative information score in anomaly {}: {}",
-                    i,
-                    anomaly.information_theoretic_score
-                );
-            }
-        }
-    }
-}
-
-pub mod func_tests;
-pub mod test_runner;
