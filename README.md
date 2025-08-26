@@ -1,561 +1,280 @@
-# anomaly-grid
+# Anomaly Grid
 
-```
      █████╗ ███╗   ██╗ ██████╗ ███╗   ███╗ █████╗ ██╗  ██╗   ██╗
     ██╔══██╗████╗  ██║██╔═══██╗████╗ ████║██╔══██╗██║  ╚██╗ ██╔╝
     ███████║██╔██╗ ██║██║   ██║██╔████╔██║███████║██║   ╚████╔╝ 
     ██╔══██║██║╚██╗██║██║   ██║██║╚██╔╝██║██╔══██║██║    ╚██╔╝  
     ██║  ██║██║ ╚████║╚██████╔╝██║ ╚═╝ ██║██║  ██║███████╗██║   
     ╚═╝  ╚═╝╚═╝  ╚═══╝ ╚═════╝ ╚═╝     ╚═╝╚═╝  ╚═╝╚══════╝╚═╝   
-    [ANOMALY-GRID v0.1.7] - SEQUENCE ANOMALY DETECTION ENGINE
-```
+    [ANOMALY-GRID v0.2.0] - SEQUENCE ANOMALY DETECTION ENGINE
 
-[![Crates.io](https://img.shields.io/crates/v/anomaly-grid)](https://crates.io/crates/anomaly-grid)
-[![Documentation](https://docs.rs/anomaly-grid/badge.svg)](https://docs.rs/anomaly-grid/0.1.7)
+[![Crates.io](https://img.shields.io/crates/v/anomaly-grid.svg)](https://crates.io/crates/anomaly-grid)
+[![Documentation](https://docs.rs/anomaly-grid/badge.svg)](https://docs.rs/anomaly-grid)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**Sequential pattern analysis through variable-order Markov chains with spectral decomposition and quantum state modeling. Built for detecting deviations in finite-alphabet sequences.**
+A Rust library implementing variable-order Markov chains for sequence anomaly detection in finite alphabets.
 
----
+## What This Library Does
 
+- **Variable-Order Markov Models**: Builds contexts of length 1 to max_order from training sequences
+- **Hierarchical Context Selection**: Uses longest available context, falls back to shorter contexts
+- **Laplace Smoothing**: Adds α=1.0 to all transition counts for probability estimation
+- **Shannon Entropy Calculation**: Computes H(X) = -∑ P(x) log₂ P(x) for each context
+- **Sliding Window Detection**: Analyzes test sequences using overlapping windows
+- **Parallel Batch Processing**: Processes multiple sequences using Rayon
+
+## Known Limitations So Far
+
+### Memory Complexity: O(|alphabet|^max_order)
+**This grows exponentially:**
+
+| Alphabet Size | Max Order | Theoretical Contexts |
+|---------------|-----------|---------------------|
+| 10            | 3         | ~1,100              |
+| 20            | 3         | ~8,400              |
+| 20            | 4         | ~168,000            |
+| 50            | 3         | ~132,500            |
+| 100           | 3         | ~1,010,000          |
+
+**Memory usage depends on actual sequence patterns and cannot be predicted without profiling your specific data.**
+
+### Algorithm Limitations
+- **Standard Markov Model**: Basic implementation, no theoretical optimality (Will see if it is worth it)
+- **Greedy Context Selection**: Uses longest available context for now (not optimal)
+- **Fixed Smoothing**: α=1.0 Laplace smoothing (not adaptive for now)
+- **No Compression**: Does not implement Context Tree Weighting or similar algorithms for now.
+
+### Practical Constraints
+- **Memory Bound**: Will fail on large state spaces
+- **Sequential Processing**: Not designed for real-time high-volume streams (No plans to change this by my own, it is too much)
+
+## Installation
+
+```toml
+[dependencies]
+anomaly-grid = "0.2.0"
 ```
-⚠️ Development Status
-This library is currently in active development and represents ongoing improve of my knowledge in advanced anomaly detection methodologies. While the core algorithms are mathematically sound and extensively tested, there are areas that require further optimization and refinement.
-I acknowledge that complex mathematical implementations can present edge cases and unexpected behaviors. If you encounter any issues, inconsistencies, or have suggestions for improvement, please don't hesitate to reach me out. Your feedback is invaluable for enhancing the library's robustness and reliability.
-Known areas for improvement:
 
--Spectral analysis convergence in edge cases
--Memory optimization for large state spaces
--Performance tuning for specific use cases
--Documentation clarity and completeness
-
-Contact: Please file issues on my repository or reach out directly for technical discussions, bug reports, or collaboration opportunities. I am committed to continuous improvement and appreciate your patience as I or we (hopefully) refine this research implementation.
-```
-
-## 🚀 Quick Start
+## Basic Usage
 
 ```rust
 use anomaly_grid::*;
 
-fn your_function() -> Result<(), Box<dyn std::error::Error>> {
-    // Initialize detection engine
-    let mut detector = AdvancedTransitionModel::new(3);
-
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Create detector (max_order determines memory usage)
+    let mut detector = AnomalyDetector::new(3)?;
+    
     // Train on normal patterns
-    let baseline: Vec<String> = vec!["connect", "auth", "query", "disconnect"]
-        .into_iter()
-        .map(String::from)
-        .collect();
-    detector.build_context_tree(&baseline)?;
-
-    // Detect anomalies in suspicious activity
-    let suspect: Vec<String> = vec!["connect", "auth", "admin_escalate", "dump_db"]
-        .into_iter()
-        .map(String::from)
-        .collect();
-    let threats = detector.detect_advanced_anomalies(&suspect, 0.01);
-
-    // Analyze results
-    for threat in threats {
-        if threat.likelihood < 1e-6 {
-            println!("🚨 HIGH THREAT: {:?}", threat.state_sequence);
-            println!("   Risk Score: {:.2e}", 1.0 - threat.likelihood);
-            println!(
-                "   Confidence: [{:.2e}, {:.2e}]",
-                threat.confidence_interval.0, threat.confidence_interval.1
-            );
-        }
+    let normal_sequence = vec![
+        "A".to_string(), "B".to_string(), "C".to_string(),
+        "A".to_string(), "B".to_string(), "C".to_string(),
+    ];
+    detector.train(&normal_sequence)?;
+    
+    // Detect anomalies
+    let test_sequence = vec![
+        "A".to_string(), "X".to_string(), "Y".to_string(),
+    ];
+    let anomalies = detector.detect_anomalies(&test_sequence, 0.1)?;
+    
+    for anomaly in anomalies {
+        println!("Sequence: {:?}, Likelihood: {:.6}", 
+                 anomaly.sequence, anomaly.likelihood);
     }
-
+    
     Ok(())
 }
 ```
 
-## 🔬 Core Technology Stack
+## API Reference
 
-### Mathematical Foundation
-- **Variable-Order Markov Models**: Context Tree Weighting with adaptive order selection
-- **Spectral Analysis**: Eigenvalue decomposition of transition matrices with robust convergence
-- **Information Theory**: Shannon entropy, KL divergence, and surprise quantification
-- **Quantum Modeling**: Superposition states with entropy-based phase encoding -- Highly speculative and naive implementations, will be removing in latter versions and experiment somewhere else
-- **Topological Features**: Simplified persistent homology and clustering analysis
+### AnomalyDetector
 
-### Multi-Dimensional Scoring
-Each anomaly receives **5 independent scores**:
-
-1. **Likelihood Score**: `prob / sqrt(support)` - Lower = more anomalous
-2. **Information Score**: `(surprise + entropy) / length` - Higher = more anomalous  
-3. **Spectral Score**: `|observed - stationary|` - Deviation from equilibrium
-4. **Quantum Coherence**: `1 - trace/n_states` - Superposition measurement -- Same of what was stated above about these naive implementations.
-5. **Topological Signature**: `[components, cycles, clustering]` - Structural complexity
-
-## 🎯 Proven Use Cases
-
-### Network Security
 ```rust
-// Port scan detection
-let normal_traffic = vec![
-    "TCP_SYN", "TCP_ACK", "HTTP_GET", "HTTP_200", "TCP_FIN"
-];
-let attack_pattern = vec![
-    "TCP_SYN", "TCP_RST", "TCP_SYN", "TCP_RST", "TCP_SYN", "TCP_RST"
-];
+// Constructor - returns Result due to validation
+pub fn new(max_order: usize) -> AnomalyGridResult<Self>
+
+// Training - builds context tree from sequence
+pub fn train(&mut self, sequence: &[String]) -> AnomalyGridResult<()>
+
+// Detection - sliding window analysis
+pub fn detect_anomalies(&self, sequence: &[String], threshold: f64) -> AnomalyGridResult<Vec<AnomalyScore>>
+
+// Batch processing - parallel analysis
+pub fn batch_process_sequences(
+    sequences: &[Vec<String>],
+    config: &AnomalyGridConfig,
+    threshold: f64,
+) -> AnomalyGridResult<Vec<Vec<AnomalyScore>>>
 ```
 
-### User Behavior Analysis
+### AnomalyScore
+
 ```rust
-// Privilege escalation detection
-let normal_session = vec![
-    "LOGIN", "DASHBOARD", "PROFILE", "SETTINGS", "LOGOUT"
-];
-let suspicious_session = vec![
-    "LOGIN", "ADMIN_PANEL", "USER_LIST", "DELETE_USER", "DELETE_USER"
-];
+pub struct AnomalyScore {
+    pub sequence: Vec<String>,      // The analyzed window
+    pub likelihood: f64,            // P(sequence|model) ∈ [0,1]
+    pub log_likelihood: f64,        // ln(likelihood)
+    pub information_score: f64,     // Average -log₂(P(x))
+    pub anomaly_strength: f64,      // Normalized score ∈ [0,1]
+}
 ```
 
-### Financial Fraud
+## Mathematical Implementation
+
+### Probability Estimation
+```
+P(next_state | context) = (count + α) / (total_count + α × vocab_size)
+```
+where α = 1.0 (Laplace smoothing)
+
+### Shannon Entropy
+```
+H(X) = -∑ P(x) log₂ P(x)
+```
+
+### Context Selection
+1. Try context of length max_order
+2. If no transitions found, try max_order-1
+3. Continue until context of length 1
+4. If still no match, use uniform probability
+
+### Anomaly Scoring
+```
+anomaly_strength = tanh((log_likelihood_component × 0.7 + info_score × 0.3) / 10.0)
+```
+
+## Complexity Analysis
+
+### Time Complexity (Theoretical)
+- **Training**: O(n × max_order × |alphabet|)
+- **Detection**: O(m × max_order) where m = test sequence length
+- **Memory**: O(|alphabet|^max_order)
+
+**Note**: Actual performance depends heavily on your data characteristics, sequence patterns, and system resources. Profile your specific use case.
+
+## Configuration
+
+### Choosing max_order
+- **Order 2**: Lower memory usage, captures immediate dependencies
+- **Order 3**: Higher memory usage, captures longer patterns
+- **Order 4+**: Exponentially higher memory usage
+
+**Recommendation**: Start with order 2, measure memory usage, then increase if needed.
+
+### Choosing threshold
+- **Lower values (0.001)**: More sensitive, more detections
+- **Higher values (0.1)**: Less sensitive, fewer detections
+
+**Recommendation**: Experiment with your data to find appropriate values.
+
+### Memory Estimation
 ```rust
-// Velocity attack detection
-let normal_transactions = vec![
-    "AUTH", "PURCHASE", "CONFIRM", "SETTLEMENT"
-];
-let fraud_pattern = vec![
-    "VELOCITY_ALERT", "AUTH", "AUTH", "AUTH", "AUTH"
-];
+fn estimate_max_contexts(alphabet_size: usize, max_order: usize) -> usize {
+    (1..=max_order)
+        .map(|order| alphabet_size.pow(order as u32))
+        .sum()
+}
 ```
 
-### System Monitoring
+**Note**: Actual context count depends on sequence patterns and may be much lower.
+
+## Performance Monitoring
+
+The library includes performance monitoring:
+
 ```rust
-// Service crash detection
-let normal_logs = vec![
-    "BOOT", "SERVICE_START", "AUTH_SUCCESS", "FILE_ACCESS"
-];
-let anomalous_logs = vec![
-    "SERVICE_CRASH", "SERVICE_CRASH", "SERVICE_CRASH", "ROOTKIT_DETECTED"
-];
+let mut detector = AnomalyDetector::new(3)?;
+detector.train(&sequence)?;
+
+// Get performance metrics
+let metrics = detector.performance_metrics();
+println!("Training time: {} ms", metrics.training_time_ms);
+println!("Context count: {}", metrics.context_count);
+println!("Memory estimate: {} bytes", metrics.estimated_memory_bytes);
+
+// Detection with monitoring
+let anomalies = detector.detect_anomalies_with_monitoring(&test_sequence, 0.1)?;
+let updated_metrics = detector.performance_metrics();
+println!("Detection time: {} ms", updated_metrics.detection_time_ms);
 ```
 
-### Bioinformatics
-```rust
-// DNA mutation detection
-let normal_gene = vec![
-    "ATG", "CGA", "TTC", "AAG", "GCT", "TAA"  // Start -> Stop codon
-];
-let mutation = vec![
-    "XTG", "CGA", "TTC", "AAG", "GCT"  // Invalid nucleotide + missing stop
-];
-```
+## Suitable Use Cases
 
-## ⚡ Performance Characteristics
+### Potentially Good Fit
+- **System logs** with limited event types
+- **Network protocols** with small command sets
+- **User workflows** with simple action sequences
+- **IoT sensors** with categorical states
+- **Educational purposes** and algorithm learning
 
-### Computational Complexity
-```
-Training:   O(n × k × order)     where n=sequence_length, k=alphabet_size
-Detection:  O(m × k × log(k))    where m=test_length
-Memory:     O(k^order)           exponential in context depth
-```
+### Likely Poor Fit
+- **NLPs** (large vocabulary)
+- **High-resolution sensor data** (continuous values)
+- **Real-time processing** (high-volume streams)
+- **Large state spaces** (many unique states)
 
-### Parallel Processing
-```rust
-// Batch analysis across multiple sequences
-let sequences = vec![
-    vec!["GET", "200", "POST", "201"],
-    vec!["SELECT", "INSERT", "COMMIT"],
-    vec!["SYN", "ACK", "DATA", "FIN"]
-];
+**Recommendation**: Test with your specific data to determine suitability.
 
-let results = batch_process_sequences(&sequences, 3, 0.05);
-// Processes all sequences in parallel using Rayon
-```
+## Error Handling
 
-## 🛠️ Installation & Dependencies
+All functions return `AnomalyGridResult<T>` which is `Result<T, AnomalyGridError>`.
+
+Common errors:
+- `InvalidMaxOrder`: max_order = 0
+- `SequenceTooShort`: sequence length < min_sequence_length
+- `InvalidThreshold`: threshold not in [0,1]
+- `EmptyContextTree`: detection attempted before training
+- `MemoryLimitExceeded`: too many contexts created
+
+## Dependencies
 
 ```toml
 [dependencies]
-anomaly-grid = "0.1.7"
-
-# Or add manually:
-nalgebra = "0.33.2"  # Linear algebra operations
-ndarray = "0.16.1"   # N-dimensional arrays
-rayon = "1.10.0"     # Parallel processing
+rayon = "1.10.0"  # Parallel processing only
 ```
 
-## 📊 Advanced Usage
+Minimal dependencies - only Rayon for optional parallel batch processing.
 
-### Model Configuration
-```rust
-// Recommended parameters for different scenarios
-let network_detector = AdvancedTransitionModel::new(4);  // Network protocols
-let user_detector = AdvancedTransitionModel::new(3);     // User sessions  
-let financial_detector = AdvancedTransitionModel::new(4); // Transactions
-let bio_detector = AdvancedTransitionModel::new(6);      // DNA sequences
-```
-
-### Training Requirements
-```rust
-// Minimum data requirements for stable analysis
-let min_sequence_length = 20 * max_order;  // Statistical significance
-let min_examples_per_symbol = 5;           // Reliable probability estimates
-let recommended_alphabet_size = 10..=50;   // Memory vs. expressiveness trade-off
-```
-
-### Result Interpretation
-```rust
-for anomaly in anomalies {
-    let risk_score = 1.0 - anomaly.likelihood;
-    
-    match risk_score {
-        r if r > 0.999 => println!("🔴 CRITICAL: {:.2e}", r),
-        r if r > 0.99  => println!("🟡 HIGH: {:.2e}", r),
-        r if r > 0.9   => println!("🟢 MEDIUM: {:.2e}", r),
-        _              => println!("ℹ️  LOW: {:.2e}", risk_score),
-    }
-    
-    // Multi-dimensional analysis
-    println!("Information entropy: {:.4}", anomaly.information_theoretic_score);
-    println!("Spectral deviation: {:.4}", anomaly.spectral_anomaly_score);
-    println!("Quantum coherence: {:.4}", anomaly.quantum_coherence_measure);
-    println!("Topological complexity: {:?}", anomaly.topological_signature);
-}
-```
-
-## 🧪 Testing & Validation
-
-### Comprehensive Test Suite
-```bash
-# Run all tests with detailed output
-cargo test -- --nocapture
-
-```
-
-### Mathematical Validation
-The library automatically validates:
-- **Probability Conservation**: All context probabilities sum to 1.0
-- **Entropy Bounds**: 0 ≤ entropy ≤ log₂(alphabet_size)
-- **Spectral Stability**: Eigenvalue convergence within tolerance
-- **Numerical Precision**: No NaN/infinity propagation
-
-
-
-## 🚨 Known Limitations
-
-### Memory Scaling
-```rust
-// Memory usage grows exponentially with context order
-let contexts_10_3 = 10_usize.pow(3);      // 1,000 contexts
-let contexts_50_3 = 50_usize.pow(3);      // 125,000 contexts  
-let contexts_10_5 = 10_usize.pow(5);      // 100,000 contexts
-
-// Recommended limits:
-assert!(alphabet_size <= 50);
-assert!(max_order <= 5);
-assert!(sequence_length >= 20 * max_order);
-```
-
-### Spectral Analysis Constraints
-- **Matrix Conditioning**: Large/sparse matrices may have unstable eigenvalues
-- **Convergence Issues**: Disconnected graphs may not reach stationary distribution
-- **Computational Cost**: O(n³) eigenvalue decomposition for n states
-
-### Quantum Features Disclaimer - Speculative implementations
-- **Simplified Implementation**: Not full quantum computation, this is highly speculative for many reason in that area, don't crucify me xD
-- **Phase Encoding**: Based on classical entropy values only
-- **Coherence Measure**: Approximation of true quantum coherence
-
-In later versions this will be avoided completely since I will continue experimenting with it on a sepatate, we can enjoy some naive implementations :)
-
-## 🔧 Configuration Tuning
-
-### Sensitivity vs. False Positives
-```rust
-let threshold = match use_case {
-    "critical_security" => 0.001,    // High sensitivity
-    "fraud_detection"   => 0.01,     // Balanced
-    "general_monitoring" => 0.1,     // Low false positives
-};
-```
-Example:
-
-```rust
-use anomaly_grid::{AdvancedTransitionModel, AnomalyScore};
-
-fn your_fn() {
-    println!("Starting anomaly detection example...");
-
-    //Prepare a sequence of states (your data)
-    let sequence: Vec<String> = vec![
-        "normal_event_A",
-        "normal_event_B",
-        "normal_event_C",
-        "normal_event_A",
-        "normal_event_B",
-        "normal_event_C",
-        "unexpected_event_X",//Anomaly
-        "unusual_event_Y",//Anomaly
-        "normal_event_A",
-        "normal_event_B",
-        "normal_event_C",
-    ]
-    .into_iter()
-    .map(String::from)
-    .collect();
-
-    //Create a new AdvancedTransitionModel instance
-    //max_order determines the context length for the Markov model
-    let max_order = 2;
-    let mut model = AdvancedTransitionModel::new(max_order);
-
-    //Build the context tree (train the model on your data)
-    // this is less than ideal though, you would train on a large set of 'normal' data first.
-    // f or this example, I build the model on the sequence itself to demonstrate.
-    match model.build_context_tree(&sequence) {
-        Ok(_) => println!("Context tree built successfully."),
-        Err(e) => {
-            eprintln!("Error building context tree: {}", e);
-            return;
-        }
-    }
-
-    //Define a threshold for anomaly detection
-    // A lower threshold generally means stricter anomaly detection (fewer false positives, but potentially less sensitivity).
-    let anomaly_threshold = 0.05;    //Example threshold
-
-    println!(
-        "\nDetecting anomalies with threshold: {:.4}",
-        anomaly_threshold
-    );
-
-    // Detect advanced anomalies in the sequence
-    let anomalies: Vec<AnomalyScore> =
-        model.detect_advanced_anomalies(&sequence, anomaly_threshold);
-
-    //   Process and display the detected anomalies
-    if anomalies.is_empty() {
-        println!("No anomalies detected based on the calculated scores.");
-    } else {
-        println!("\n--- Detected Anomalies (scores below threshold) ---");
-        for anomaly in &anomalies {
-            //In your detect_advanced_anomalies function, the threshold isnt used
-            //for filtering. Here, we manually filter based on 'likelihood' for demonstration
-            if anomaly.likelihood < anomaly_threshold {
-                println!("  Anomaly Detected:");
-                println!("    Sequence: {:?}", anomaly.state_sequence);
-                println!("    Likelihood: {:.6}", anomaly.likelihood);
-                println!(
-                    "    Information Score: {:.6}",
-                    anomaly.information_theoretic_score
-                );
-                println!("    Spectral Score: {:.6}", anomaly.spectral_anomaly_score);
-                println!(
-                    "    Quantum Coherence: {:.6}",
-                    anomaly.quantum_coherence_measure
-                );
-                println!(
-                    "    Topological Signature: {:?}",
-                    anomaly.topological_signature
-                );
-                println!(
-                    "    Confidence Interval: ({:.6}, {:.6})",
-                    anomaly.confidence_interval.0, anomaly.confidence_interval.1
-                );
-                println!();
-            } else {
-                //You might choose to print events that are "less" anomalous but still scored
-                // println!("  Normal Event (score above threshold): {:?}", anomaly.state_sequence);
-                // println!("    Likelihood: {:.6}", anomaly.likelihood);
-            }
-        }
-    }
-    println!("Anomaly detection example finished.");
-}
-```
-
-### Memory Optimization
-```rust
-// For large alphabets, consider preprocessing:
-fn reduce_alphabet(sequence: &[String]) -> Vec<String> {
-    sequence.iter()
-        .map(|s| match s.as_str() {
-            "HTTP_GET" | "HTTP_POST" | "HTTP_PUT" => "HTTP_REQUEST".to_string(),
-            "TCP_SYN" | "TCP_ACK" | "TCP_FIN" => "TCP_CONTROL".to_string(),
-            _ => s.clone()
-        })
-        .collect()
-}
-```
-
-Example:
-
-```rust
-//I set up the helper function like this
-fn reduce_alphabet(sequence: &[String]) -> Vec<String> {
-    sequence
-        .iter()
-        .map(|s| match s.as_str() {
-            "HTTP_GET" | "HTTP_POST" | "HTTP_PUT" => "HTTP_REQUEST".to_string(),
-            "TCP_SYN" | "TCP_ACK" | "TCP_FIN" => "TCP_CONTROL".to_string(),
-            _ => s.clone(),
-        })
-        .collect()
-}
-
-fn main_fn() {
-    // Example of a raw sequence with a potentially large alphabet
-    let raw_sequence_data: Vec<String> = vec![
-        "HTTP_GET".to_string(),
-        "TCP_SYN".to_string(),
-        "HTTP_POST".to_string(),
-        "FILE_ACCESS".to_string(),
-        "TCP_ACK".to_string(),
-        "HTTP_GET".to_string(),
-        "FTP_LOGIN".to_string(),
-        "TCP_FIN".to_string(),
-        "SYSTEM_ERROR".to_string(),
-    ];
-
-    println!(
-        "Original Sequence (size: {}): {:?}",
-        raw_sequence_data.len(),
-        raw_sequence_data
-    );
-
-    // Apply the alphabet reduction for memory optimization
-    let processed_sequence_data = reduce_alphabet(&raw_sequence_data);
-
-    println!(
-        "Processed Sequence (size: {}): {:?}",
-        processed_sequence_data.len(),
-        processed_sequence_data
-    );
-}
-```
-
-### Skip if you understood based on the code, I am the worst programmer in the world so I would not be surprised, so for normies like me, here is the memory opt explanation:
-
-The key benefit of `reduce_alphabet` for memory opt
-comes when this `processed_sequence_data` is then used to build
-data structures that depend on the uniqueness of the elements,
-such as a HashMap for contexts in a Markov model.
-
-So if you were to build a `HashMap<Vec<String>, usize>`
-to count occurrences of different patterns:
-Without `reduce_alphabet`, "HTTP_GET", "HTTP_POST", and "HTTP_PUT"
-would be distinct keys. With `reduce_alphabet`, they all become
-"HTTP_REQUEST", reducing the number of unique keys and with that
-the memory consumed by the HashMap and its associated data.
-
-Example (conceptual, assumes you use our AdvancedTransitionModel or similar):
-let mut model = AdvancedTransitionModel::new(3);
-model.build_context_tree(&processed_sequence_data).unwrap();
-(This step would use less memory than if raw_sequence_data was used)
-
-The 'AdvancedTransitionModel' (from this lib) internally builds
-a context tree using a HashMap to store `ContextNode`s. Each `ContextNode`
-also contains HashMaps for `counts` and `probabilities`.
-
-By reducing the alphabet, you directly decrease the number of unique
-'states' that appear in these HashMaps, leading to:
-    1. Fewer entries in the top-level 'contexts' HashMap.
-    2. Fewer entries in the 'counts' and 'probabilities' HashMaps within each       'ContextNode'.
-This reduces the overall memory footprint of the model, especially for
-high-order Markov models and long sequences with many distinct original states.
-
-### Performance Optimization
-```rust
-// Use batch processing for multiple sequences
-let results = sequences
-    .par_iter()  // Parallel processing
-    .map(|seq| {
-        let mut model = AdvancedTransitionModel::new(3);
-        model.build_context_tree(seq).unwrap();
-        model.detect_advanced_anomalies(seq, threshold)
-    })
-    .collect();
-```
-
-Example:
-
-```rust
-use anomaly_grid::{AnomalyScore, batch_process_sequences};
-
-fn your_function() {
-    // Define a threshold for anomaly detection
-    let anomaly_threshold = 0.05;
-
-    // Define multiple sequences as a vector of vectors of strings
-    let sequences_to_analyze: Vec<Vec<String>> = vec![
-        vec!["A", "B", "C", "A", "B", "C", "X", "Y", "Z"]
-            .into_iter()
-            .map(String::from)
-            .collect(),
-        vec!["P", "Q", "R", "P", "S", "T", "U", "V"]
-            .into_iter()
-            .map(String::from)
-            .collect(),
-        vec!["X", "Y", "Z", "X", "Y", "Z", "X", "A", "B", "C"]
-            .into_iter()
-            .map(String::from)
-            .collect(),
-    ];
-
-    // Define the maximum order for the Markov model
-    let max_markov_order = 3;
-
-    // HERE :) -- Use batch_process_sequences to process all sequences in parallel
-    let all_anomaly_results: Vec<Vec<AnomalyScore>> =
-        batch_process_sequences(&sequences_to_analyze, max_markov_order, anomaly_threshold);
-
-    // Iterate through the results for each sequence
-    for (i, sequence_anomalies) in all_anomaly_results.iter().enumerate() {
-        println!("Anomalies for Sequence {}:", i + 1);
-        if sequence_anomalies.is_empty() {
-            println!("  No anomalies detected.");
-        } else {
-            for anomaly in sequence_anomalies {
-                println!("  Anomaly Detected:");
-                println!("    Sequence: {:?}", anomaly.state_sequence);
-                println!("    Likelihood: {:.6}", anomaly.likelihood);
-                println!(
-                    "    Information Score: {:.6}",
-                    anomaly.information_theoretic_score
-                );
-                println!("    Spectral Score: {:.6}", anomaly.spectral_anomaly_score);
-                println!(
-                    "    Quantum Coherence: {:.6}",
-                    anomaly.quantum_coherence_measure
-                );
-                println!("    Confidence Interval: {:?}", anomaly.confidence_interval);
-                println!(
-                    "    Topological Signature: {:?}",
-                    anomaly.topological_signature
-                );
-                println!();
-            }
-        }
-        println!("------------------------------------");
-    }
-}
-```
-
-## 📚 Documentation
-
-- **[User Manual](USER_MANUAL.md)**: Comprehensive developer guide with examples
-- **[API Documentation](https://docs.rs/anomaly-grid)**: Generated from source code
-
-
-## 🤝 Contributing
+## Testing
 
 ```bash
-# Development setup
-git clone https://github.com/username/anomaly-grid.git
-cd anomaly-grid
-cargo build --release
+# Run all tests
 cargo test
 
+# Run comprehensive validation
+cargo test --test comprehensive_test_runner
+
+# Run examples
+cargo run --example quick_start
 ```
 
-## 📄 License
+## Version History
 
-Licensed under the MIT License. See LICENCE for details.
+### v0.2.0
+- **Major refactoring**: Encapsulation of the main functions and a bigger set of tests.
+- **Documentation reduction**: Difficulty to keep documenting everything in text outside the code got chaotic, reduced for simplicity but provided enough examples and comments in the code.
+- **API consistency**: All constructors return `Result<T, AnomalyGridError>`
+
+## Benchmarking Your Use Case
+
+To evaluate if this library suits your needs:
+
+1. **Start small**: Test with a subset of your data
+2. **Monitor memory**: Use the performance metrics
+3. **Profile thoroughly**: Test with realistic data volumes
+4. **Compare alternatives**: Benchmark against other solutions
+
+## When This Library May Not Be Suitable
+
+- **Production systems** requiring guaranteed performance
+- **Applications** with strict memory constraints
+- **Real-time systems** with strict latency requirements
+- **Systems** requiring theoretical optimality guarantees
+- **Applications** needing adaptive or online learning
+
+## License
+
+MIT License - see [LICENSE](LICENSE) file.
 
 ---
