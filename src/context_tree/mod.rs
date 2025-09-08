@@ -153,12 +153,16 @@ impl ContextNode {
 // Note: Default implementation removed as ContextNode now requires StringInterner
 
 /// Context tree for storing variable-order Markov chain contexts
+/// 
+/// Uses StateId internally for memory efficiency while maintaining string-based API
 #[derive(Debug, Clone)]
 pub struct ContextTree {
-    /// Map from context sequences to context nodes
-    pub contexts: HashMap<Vec<String>, ContextNode>,
+    /// Map from context sequences (as StateIds) to context nodes
+    contexts: HashMap<Vec<StateId>, ContextNode>,
     /// Maximum context order (length)
     pub max_order: usize,
+    /// String interner for converting between strings and StateIds
+    interner: Arc<StringInterner>,
 }
 
 impl ContextTree {
@@ -168,9 +172,25 @@ impl ContextTree {
             return Err(AnomalyGridError::invalid_max_order(max_order));
         }
 
+        let interner = Arc::new(StringInterner::new());
+        
         Ok(Self {
             contexts: HashMap::new(),
             max_order,
+            interner,
+        })
+    }
+
+    /// Create a new context tree with existing string interner
+    pub fn with_interner(max_order: usize, interner: Arc<StringInterner>) -> AnomalyGridResult<Self> {
+        if max_order == 0 {
+            return Err(AnomalyGridError::invalid_max_order(max_order));
+        }
+
+        Ok(Self {
+            contexts: HashMap::new(),
+            max_order,
+            interner,
         })
     }
 
