@@ -86,9 +86,7 @@ impl ContextNode {
     pub fn get_string_counts(&self) -> HashMap<String, usize> {
         self.counts
             .iter()
-            .filter_map(|(state_id, count)| {
-                self.interner.get_string(state_id).map(|s| (s, count))
-            })
+            .filter_map(|(state_id, count)| self.interner.get_string(state_id).map(|s| (s, count)))
             .collect()
     }
 

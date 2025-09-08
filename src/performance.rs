@@ -136,9 +136,10 @@ impl ContextTree {
 
             // Node counts using optimized TransitionCounts
             // Estimate based on actual storage type (SmallVec vs HashMap)
-            total_bytes += node.get_state_counts().count() * 
-                (std::mem::size_of::<crate::string_interner::StateId>() + std::mem::size_of::<usize>());
-            
+            total_bytes += node.get_state_counts().count()
+                * (std::mem::size_of::<crate::string_interner::StateId>()
+                    + std::mem::size_of::<usize>());
+
             // Add overhead for the TransitionCounts enum itself
             total_bytes += std::mem::size_of::<crate::transition_counts::TransitionCounts>();
 

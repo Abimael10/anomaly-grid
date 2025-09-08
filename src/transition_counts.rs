@@ -4,11 +4,11 @@
 //! optimizing for the common case where contexts have few transitions.
 
 use crate::string_interner::StateId;
-use smallvec::{SmallVec, smallvec};
+use smallvec::{smallvec, SmallVec};
 use std::collections::HashMap;
 
 /// Memory-efficient storage for transition counts
-/// 
+///
 /// Uses SmallVec for small collections (≤4 transitions) and HashMap for larger ones.
 /// Based on analysis showing 100% of typical contexts have ≤4 transitions.
 #[derive(Debug, Clone)]
@@ -16,7 +16,7 @@ pub enum TransitionCounts {
     /// Inline storage for small collections (≤4 transitions)
     /// Uses stack allocation to avoid heap overhead
     Small(SmallVec<[(StateId, usize); 4]>),
-    
+
     /// HashMap storage for large collections (>4 transitions)
     /// Falls back to HashMap when small storage is exceeded
     Large(HashMap<StateId, usize>),
@@ -31,15 +31,12 @@ impl TransitionCounts {
     /// Get the count for a specific state
     pub fn get(&self, state_id: StateId) -> usize {
         match self {
-            Self::Small(vec) => {
-                vec.iter()
-                    .find(|(id, _)| *id == state_id)
-                    .map(|(_, count)| *count)
-                    .unwrap_or(0)
-            }
-            Self::Large(map) => {
-                map.get(&state_id).copied().unwrap_or(0)
-            }
+            Self::Small(vec) => vec
+                .iter()
+                .find(|(id, _)| *id == state_id)
+                .map(|(_, count)| *count)
+                .unwrap_or(0),
+            Self::Large(map) => map.get(&state_id).copied().unwrap_or(0),
         }
     }
 
@@ -52,7 +49,7 @@ impl TransitionCounts {
                     *existing_count = count;
                     return;
                 }
-                
+
                 // Check if we need to promote to Large
                 if vec.len() >= 4 {
                     // Promote to HashMap
@@ -120,17 +117,18 @@ impl TransitionCounts {
         match self {
             Self::Small(vec) => {
                 // SmallVec overhead + inline storage
-                std::mem::size_of::<SmallVec<[(StateId, usize); 4]>>() +
-                if vec.spilled() {
-                    vec.capacity() * std::mem::size_of::<(StateId, usize)>()
-                } else {
-                    0 // Inline storage already counted
-                }
+                std::mem::size_of::<SmallVec<[(StateId, usize); 4]>>()
+                    + if vec.spilled() {
+                        vec.capacity() * std::mem::size_of::<(StateId, usize)>()
+                    } else {
+                        0 // Inline storage already counted
+                    }
             }
             Self::Large(map) => {
                 // HashMap overhead + entries
-                std::mem::size_of::<HashMap<StateId, usize>>() +
-                map.capacity() * (std::mem::size_of::<StateId>() + std::mem::size_of::<usize>())
+                std::mem::size_of::<HashMap<StateId, usize>>()
+                    + map.capacity()
+                        * (std::mem::size_of::<StateId>() + std::mem::size_of::<usize>())
             }
         }
     }
@@ -230,11 +228,19 @@ mod tests {
 
         let collected: Vec<_> = counts.iter().collect();
         assert_eq!(collected.len(), 2);
-        
+
         // Check that we have the right states (order may vary)
-        let state_1_count = collected.iter().find(|(id, _)| *id == StateId::new(1)).unwrap().1;
-        let state_2_count = collected.iter().find(|(id, _)| *id == StateId::new(2)).unwrap().1;
-        
+        let state_1_count = collected
+            .iter()
+            .find(|(id, _)| *id == StateId::new(1))
+            .unwrap()
+            .1;
+        let state_2_count = collected
+            .iter()
+            .find(|(id, _)| *id == StateId::new(2))
+            .unwrap()
+            .1;
+
         assert_eq!(state_1_count, 2);
         assert_eq!(state_2_count, 1);
     }
@@ -253,7 +259,7 @@ mod tests {
         // Small should use less memory for small collections
         assert!(small_usage > 0);
         assert!(large_usage > 0);
-        
+
         // For this test, we just verify the calculation works
         // The actual comparison depends on the specific sizes
         println!("Small usage: {} bytes", small_usage);
