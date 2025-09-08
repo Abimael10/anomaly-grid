@@ -150,11 +150,7 @@ impl ContextNode {
     }
 }
 
-impl Default for ContextNode {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+// Note: Default implementation removed as ContextNode now requires StringInterner
 
 /// Context tree for storing variable-order Markov chain contexts
 #[derive(Debug, Clone)]
