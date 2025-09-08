@@ -14,6 +14,8 @@ use crate::error::{AnomalyGridError, AnomalyGridResult};
 use crate::string_interner::{StateId, StringInterner};
 use crate::transition_counts::TransitionCounts;
 use std::collections::HashMap;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 /// A node in the context tree that stores transition statistics
