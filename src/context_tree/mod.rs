@@ -73,6 +73,23 @@ impl ContextNode {
         self.cached_config_hash = None;
     }
 
+    /// Compute a hash of the configuration for cache validation
+    fn compute_config_hash(config: &AnomalyGridConfig) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        // Hash the relevant configuration parameters that affect entropy/KL divergence
+        config.smoothing_alpha.to_bits().hash(&mut hasher);
+        hasher.finish()
+    }
+
+    /// Check if the cached values are valid for the given configuration
+    fn is_cache_valid(&self, config: &AnomalyGridConfig) -> bool {
+        if let Some(cached_hash) = self.cached_config_hash {
+            cached_hash == Self::compute_config_hash(config)
+        } else {
+            false
+        }
+    }
+
     /// Get the total number of transitions from this context
     pub fn total_count(&self) -> usize {
         self.total_count
