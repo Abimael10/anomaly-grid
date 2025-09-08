@@ -847,7 +847,7 @@ fn test_information_theory_brutal_validation() {
     println!("    📊 DETERMINISTIC SEQUENCE ANALYSIS:");
     for (context, node) in &context_tree.contexts {
         println!("      Context: {context:?}");
-        println!("        Counts: {:?}", node.counts);
+        println!("        Counts: {:?}", node.counts());
         let probabilities = node.get_all_probabilities(&AnomalyGridConfig::default());
         let entropy = node.calculate_entropy(&AnomalyGridConfig::default());
         println!("        Probabilities: {:?}", probabilities);
@@ -898,7 +898,7 @@ fn test_information_theory_brutal_validation() {
             let entropy = node.calculate_entropy(&config);
             
             println!("      Uniform Context A:");
-            println!("        Counts: {:?}", node.counts);
+            println!("        Counts: {:?}", node.counts());
             println!("        Probabilities: {:?}", probabilities);
             println!("        Entropy: {:.10}", entropy);
 
