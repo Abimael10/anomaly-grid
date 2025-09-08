@@ -21,7 +21,7 @@ pub struct AnomalyScore {
     pub log_likelihood: f64,
     /// Information-theoretic anomaly score
     pub information_score: f64,
-    /// Combined anomaly strength [0,1]
+    /// Combined anomaly strength \[0,1\]
     pub anomaly_strength: f64,
 }
 
@@ -129,7 +129,7 @@ impl AnomalyDetector {
     /// - Space: O(1) for detection (excluding result storage)
     ///
     /// # Performance Guarantees
-    /// - Validates threshold is in valid range [0,1]
+    /// - Validates threshold is in valid range \[0,1\]
     /// - Checks if model has been trained before detection
     pub fn detect_anomalies(
         &self,

@@ -80,9 +80,8 @@ impl ContextTree {
         let initial_count = self.contexts.len();
         let config = crate::config::AnomalyGridConfig::default();
 
-        self.contexts.retain(|_, node| {
-            node.calculate_entropy(&config) >= min_entropy
-        });
+        self.contexts
+            .retain(|_, node| node.calculate_entropy(&config) >= min_entropy);
 
         initial_count - self.contexts.len()
     }
@@ -124,7 +123,7 @@ impl ContextTree {
     }
 
     /// Estimate memory usage of the context tree
-    /// 
+    ///
     /// OPTIMIZED: Only counts actual stored data (counts + total_count)
     /// No longer includes probabilities, entropy, or KL divergence storage
     pub fn estimate_memory_usage(&self) -> usize {
@@ -137,7 +136,8 @@ impl ContextTree {
 
             // Node counts HashMap (using string representation for compatibility)
             let string_counts = node.get_string_counts();
-            total_bytes += string_counts.len() * (std::mem::size_of::<String>() + std::mem::size_of::<usize>());
+            total_bytes += string_counts.len()
+                * (std::mem::size_of::<String>() + std::mem::size_of::<usize>());
             total_bytes += string_counts.keys().map(|s| s.capacity()).sum::<usize>();
 
             // Cached total_count (usize)
@@ -148,7 +148,7 @@ impl ContextTree {
     }
 
     /// Get context statistics for analysis
-    /// 
+    ///
     /// OPTIMIZED: Computes entropy on-demand for statistics
     pub fn get_context_statistics(&self) -> ContextStatistics {
         let mut stats = ContextStatistics::new();

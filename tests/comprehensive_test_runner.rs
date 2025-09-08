@@ -896,7 +896,7 @@ fn test_information_theory_brutal_validation() {
             let config = AnomalyGridConfig::default();
             let probabilities = node.get_all_probabilities(&config);
             let entropy = node.calculate_entropy(&config);
-            
+
             println!("      Uniform Context A:");
             println!("        Counts: {:?}", node.counts());
             println!("        Probabilities: {:?}", probabilities);
@@ -926,7 +926,8 @@ fn test_probability_theory_brutal_validation() {
     let config = AnomalyGridConfig::default()
         .with_smoothing_alpha(1.0)
         .expect("Failed to set alpha");
-    let mut detector = AnomalyDetector::with_config(config.clone()).expect("Failed to create detector");
+    let mut detector =
+        AnomalyDetector::with_config(config.clone()).expect("Failed to create detector");
 
     // Create sequence with exact known counts
     let sequence = vec![

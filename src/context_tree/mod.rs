@@ -15,7 +15,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 /// A node in the context tree that stores transition statistics
-/// 
+///
 /// Uses StateId internally for memory efficiency while maintaining string-based API
 #[derive(Debug, Clone)]
 pub struct ContextNode {
@@ -97,7 +97,7 @@ impl ContextNode {
     }
 
     /// Get the probability for a specific next state using Laplace smoothing
-    /// 
+    ///
     /// Computes probability on-demand: P(state) = (count + α) / (total + α * |V|)
     pub fn get_probability(&self, next_state: &str, config: &AnomalyGridConfig) -> f64 {
         let state_id = self.interner.get_or_intern(next_state);
@@ -112,9 +112,9 @@ impl ContextNode {
 
         let count = self.get_count_by_id(state_id) as f64;
         let vocab_size = self.vocab_size() as f64;
-        
-        (count + config.smoothing_alpha) / 
-        (self.total_count as f64 + config.smoothing_alpha * vocab_size)
+
+        (count + config.smoothing_alpha)
+            / (self.total_count as f64 + config.smoothing_alpha * vocab_size)
     }
 
     /// Calculate Shannon entropy on-demand: H(X) = -∑ P(x) log₂ P(x)
@@ -127,7 +127,11 @@ impl ContextNode {
             .keys()
             .map(|&state_id| {
                 let p = self.get_probability_by_id(state_id, config);
-                if p > 0.0 { -p * p.log2() } else { 0.0 }
+                if p > 0.0 {
+                    -p * p.log2()
+                } else {
+                    0.0
+                }
             })
             .sum()
     }
@@ -139,7 +143,7 @@ impl ContextNode {
         }
 
         let uniform_prob = 1.0 / self.vocab_size() as f64;
-        
+
         self.counts
             .keys()
             .map(|&state_id| {
@@ -154,7 +158,7 @@ impl ContextNode {
     }
 
     /// Get all probabilities as a HashMap (for compatibility with existing code)
-    /// 
+    ///
     /// Note: This creates temporary storage and should be used sparingly
     pub fn get_all_probabilities(&self, config: &AnomalyGridConfig) -> HashMap<String, f64> {
         self.counts
@@ -176,7 +180,7 @@ impl Default for ContextNode {
 }
 
 /// Context tree for storing variable-order Markov chain contexts
-/// 
+///
 /// Uses StateId internally for memory efficiency while maintaining string-based API
 #[derive(Debug, Clone)]
 pub struct ContextTree {
@@ -196,7 +200,7 @@ impl ContextTree {
         }
 
         let interner = Arc::new(StringInterner::new());
-        
+
         Ok(Self {
             contexts: HashMap::new(),
             max_order,
@@ -205,7 +209,10 @@ impl ContextTree {
     }
 
     /// Create a new context tree with existing string interner
-    pub fn with_interner(max_order: usize, interner: Arc<StringInterner>) -> AnomalyGridResult<Self> {
+    pub fn with_interner(
+        max_order: usize,
+        interner: Arc<StringInterner>,
+    ) -> AnomalyGridResult<Self> {
         if max_order == 0 {
             return Err(AnomalyGridError::invalid_max_order(max_order));
         }
@@ -257,9 +264,10 @@ impl ContextTree {
                 let context = window[..window_size].to_vec();
                 let next_state = &window[window_size];
 
-                let node = self.contexts.entry(context).or_insert_with(|| {
-                    ContextNode::new(Arc::clone(&self.interner))
-                });
+                let node = self
+                    .contexts
+                    .entry(context)
+                    .or_insert_with(|| ContextNode::new(Arc::clone(&self.interner)));
                 node.add_transition(next_state);
             }
         }
@@ -276,10 +284,10 @@ impl ContextTree {
 
     /// Get the transition probability with custom config
     pub fn get_transition_probability_with_config(
-        &self, 
-        context: &[String], 
+        &self,
+        context: &[String],
         next_state: &str,
-        config: &AnomalyGridConfig
+        config: &AnomalyGridConfig,
     ) -> Option<f64> {
         self.contexts
             .get(context)
