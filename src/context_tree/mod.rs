@@ -157,8 +157,8 @@ impl ContextNode {
 /// Uses StateId internally for memory efficiency while maintaining string-based API
 #[derive(Debug, Clone)]
 pub struct ContextTree {
-    /// Map from context sequences (as StateIds) to context nodes
-    contexts: HashMap<Vec<StateId>, ContextNode>,
+    /// Map from context sequences to context nodes (temporarily public for compatibility)
+    pub contexts: HashMap<Vec<String>, ContextNode>,
     /// Maximum context order (length)
     pub max_order: usize,
     /// String interner for converting between strings and StateIds
@@ -316,5 +316,15 @@ impl ContextTree {
     /// Get access to the string interner
     pub fn interner(&self) -> &Arc<StringInterner> {
         &self.interner
+    }
+
+    /// Get internal contexts for performance operations (internal use)
+    pub(crate) fn contexts_mut(&mut self) -> &mut HashMap<Vec<StateId>, ContextNode> {
+        &mut self.contexts
+    }
+
+    /// Get internal contexts for read operations (internal use)
+    pub(crate) fn contexts(&self) -> &HashMap<Vec<StateId>, ContextNode> {
+        &self.contexts
     }
 }
