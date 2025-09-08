@@ -140,7 +140,12 @@ impl ContextNode {
     pub fn get_all_probabilities(&self, config: &AnomalyGridConfig) -> HashMap<String, f64> {
         self.counts
             .keys()
-            .map(|state| (state.clone(), self.get_probability(state, config)))
+            .filter_map(|&state_id| {
+                self.interner.get_string(state_id).map(|state_string| {
+                    let prob = self.get_probability_by_id(state_id, config);
+                    (state_string, prob)
+                })
+            })
             .collect()
     }
 }
