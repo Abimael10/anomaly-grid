@@ -306,7 +306,14 @@ impl ContextNode {
 
 impl Default for ContextNode {
     fn default() -> Self {
-        Self::new(Arc::new(StringInterner::new()))
+        Self {
+            counts: TransitionCounts::new(),
+            total_count: 0,
+            interner: Arc::new(StringInterner::new()),
+            cached_entropy: None,
+            cached_kl_divergence: None,
+            cached_config_hash: None,
+        }
     }
 }
 
