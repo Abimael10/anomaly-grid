@@ -65,8 +65,9 @@ pub mod error;
 pub mod markov_model;
 pub mod performance;
 pub mod string_interner;
-//pub mod collection_analysis;
+
 pub mod transition_counts;
+pub mod context_trie;
 
 // Re-export main types for convenience
 pub use anomaly_detector::{batch_process_sequences, AnomalyDetector, AnomalyScore};
@@ -133,7 +134,7 @@ mod tests {
         let config = AnomalyGridConfig::default();
 
         assert!(tree.build_from_sequence(&sequence, &config).is_ok());
-        assert!(!tree.contexts.is_empty());
+        assert!(tree.context_count() > 0);
 
         let mut model = MarkovModel::new(2).expect("Failed to create Markov model");
         assert!(model.train(&sequence).is_ok());

@@ -227,7 +227,8 @@ fn test_probability_conservation() {
     let context_tree = detector.model().context_tree();
     
     for (context, node) in &context_tree.contexts {
-        let prob_sum: f64 = node.probabilities.values().sum();
+        let probabilities = node.get_all_probabilities(&AnomalyGridConfig::default());
+        let prob_sum: f64 = probabilities.values().sum();
         assert!(
             (prob_sum - 1.0).abs() < 1e-10,
             "Probabilities should sum to 1.0 for context {:?}: {:.10}",

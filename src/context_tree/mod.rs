@@ -9,6 +9,7 @@
 //! - Cached totals: Avoids recomputing transition counts repeatedly
 
 use crate::config::AnomalyGridConfig;
+use crate::context_trie::ContextTrie;
 use crate::error::{AnomalyGridError, AnomalyGridResult};
 use crate::string_interner::{StateId, StringInterner};
 use crate::transition_counts::TransitionCounts;
@@ -180,11 +181,11 @@ impl Default for ContextNode {
 
 /// Context tree for storing variable-order Markov chain contexts
 ///
-/// Uses StateId internally for memory efficiency while maintaining string-based API
+/// Uses trie-based storage for memory efficiency through prefix sharing
 #[derive(Debug, Clone)]
 pub struct ContextTree {
-    /// Map from context sequences to context nodes (temporarily public for compatibility)
-    pub contexts: HashMap<Vec<String>, ContextNode>,
+    /// Trie-based storage for memory-efficient prefix sharing
+    trie: ContextTrie,
     /// Maximum context order (length)
     pub max_order: usize,
     /// String interner for converting between strings and StateIds
@@ -199,9 +200,10 @@ impl ContextTree {
         }
 
         let interner = Arc::new(StringInterner::new());
+        let trie = ContextTrie::new(max_order, Arc::clone(&interner));
 
         Ok(Self {
-            contexts: HashMap::new(),
+            trie,
             max_order,
             interner,
         })
@@ -216,8 +218,10 @@ impl ContextTree {
             return Err(AnomalyGridError::invalid_max_order(max_order));
         }
 
+        let trie = ContextTrie::new(max_order, Arc::clone(&interner));
+
         Ok(Self {
-            contexts: HashMap::new(),
+            trie,
             max_order,
             interner,
         })
@@ -252,21 +256,23 @@ impl ContextTree {
             for window in sequence.windows(window_size + 1) {
                 // Check memory limit before adding new context
                 if let Some(limit) = config.memory_limit {
-                    if self.contexts.len() >= limit {
+                    if self.trie.context_count() >= limit {
                         return Err(AnomalyGridError::memory_limit_exceeded(
-                            self.contexts.len(),
+                            self.trie.context_count(),
                             limit,
                         ));
                     }
                 }
 
-                let context = window[..window_size].to_vec();
+                // Convert context to StateIds for trie storage
+                let context_state_ids: Vec<StateId> = window[..window_size]
+                    .iter()
+                    .map(|s| self.interner.get_or_intern(s))
+                    .collect();
                 let next_state = &window[window_size];
 
-                let node = self
-                    .contexts
-                    .entry(context)
-                    .or_insert_with(|| ContextNode::new(Arc::clone(&self.interner)));
+                // Get or create context node in trie
+                let node = self.trie.get_or_create_context_data(&context_state_ids);
                 node.add_transition(next_state);
             }
         }
@@ -276,8 +282,14 @@ impl ContextTree {
 
     /// Get the transition probability for a given context and next state
     pub fn get_transition_probability(&self, context: &[String], next_state: &str) -> Option<f64> {
-        self.contexts
-            .get(context)
+        // Convert context to StateIds
+        let context_state_ids: Vec<StateId> = context
+            .iter()
+            .map(|s| self.interner.get_or_intern(s))
+            .collect();
+        
+        self.trie
+            .get_context_data(&context_state_ids)
             .map(|node| node.get_probability(next_state, &AnomalyGridConfig::default()))
     }
 
@@ -288,31 +300,80 @@ impl ContextTree {
         next_state: &str,
         config: &AnomalyGridConfig,
     ) -> Option<f64> {
-        self.contexts
-            .get(context)
+        // Convert context to StateIds
+        let context_state_ids: Vec<StateId> = context
+            .iter()
+            .map(|s| self.interner.get_or_intern(s))
+            .collect();
+        
+        self.trie
+            .get_context_data(&context_state_ids)
             .map(|node| node.get_probability(next_state, config))
     }
 
     /// Get a context node for the given context
     pub fn get_context_node(&self, context: &[String]) -> Option<&ContextNode> {
-        self.contexts.get(context)
+        // Convert context to StateIds
+        let context_state_ids: Vec<StateId> = context
+            .iter()
+            .map(|s| self.interner.get_or_intern(s))
+            .collect();
+        
+        self.trie.get_context_data(&context_state_ids)
     }
 
     /// Get all contexts of a specific order
-    pub fn get_contexts_of_order(&self, order: usize) -> Vec<&Vec<String>> {
-        self.contexts
-            .keys()
-            .filter(|context| context.len() == order)
+    pub fn get_contexts_of_order(&self, order: usize) -> Vec<Vec<String>> {
+        self.trie
+            .iter_contexts()
+            .filter_map(|(state_ids, _)| {
+                if state_ids.len() == order {
+                    // Convert StateIds back to strings
+                    let strings: Option<Vec<String>> = state_ids
+                        .iter()
+                        .map(|&state_id| self.interner.get_string(state_id))
+                        .collect();
+                    strings
+                } else {
+                    None
+                }
+            })
             .collect()
     }
 
     /// Get the number of contexts stored
     pub fn context_count(&self) -> usize {
-        self.contexts.len()
+        self.trie.context_count()
     }
 
     /// Get access to the string interner
     pub fn interner(&self) -> &Arc<StringInterner> {
         &self.interner
+    }
+
+    /// Get all contexts as a HashMap for compatibility with existing code
+    /// 
+    /// Note: This creates a temporary HashMap and should be used sparingly
+    /// for compatibility with existing tests and code that expects the old interface
+    pub fn contexts(&self) -> HashMap<Vec<String>, ContextNode> {
+        let mut contexts = HashMap::new();
+        
+        for (state_ids, node) in self.trie.iter_contexts() {
+            // Convert StateIds back to strings
+            if let Some(strings) = state_ids
+                .iter()
+                .map(|&state_id| self.interner.get_string(state_id))
+                .collect::<Option<Vec<String>>>()
+            {
+                contexts.insert(strings, node.clone());
+            }
+        }
+        
+        contexts
+    }
+
+    /// Get the trie for internal operations
+    pub(crate) fn trie(&self) -> &ContextTrie {
+        &self.trie
     }
 }

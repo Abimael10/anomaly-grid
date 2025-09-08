@@ -299,7 +299,7 @@ fn test_context_tree_mathematical_properties() {
         .expect("Failed to build tree");
 
     // Test that all contexts have valid mathematical properties
-    for (context, node) in &tree.contexts {
+    for (context, node) in &tree.contexts() {
         // Test probability conservation (MUST hold exactly) - computed on-demand
         let probabilities = node.get_all_probabilities(&config);
         let prob_sum: f64 = probabilities.values().sum();
@@ -314,25 +314,18 @@ fn test_context_tree_mathematical_properties() {
         let max_entropy = n_outcomes.log2();
         assert!(
             entropy >= -ULTRA_STRICT_TOLERANCE,
-            "Entropy must be non-negative for context {:?}: H = {:.15}",
-            context,
-            entropy
+            "Entropy must be non-negative for context {context:?}: H = {entropy:.15}"
         );
         assert!(
             entropy <= max_entropy + ULTRA_STRICT_TOLERANCE,
-            "Entropy exceeds maximum for context {:?}: H = {:.15} > {:.15}",
-            context,
-            entropy,
-            max_entropy
+            "Entropy exceeds maximum for context {context:?}: H = {entropy:.15} > {max_entropy:.15}"
         );
 
         // Test KL divergence properties (MUST hold) - computed on-demand
         let kl_divergence = node.calculate_kl_divergence(&config);
         assert!(
             kl_divergence >= -ULTRA_STRICT_TOLERANCE,
-            "KL divergence must be non-negative for context {:?}: KL = {:.15}",
-            context,
-            kl_divergence
+            "KL divergence must be non-negative for context {context:?}: KL = {kl_divergence:.15}"
         );
     }
 }
@@ -355,7 +348,7 @@ fn test_context_tree_probability_conservation() {
         .expect("Failed to build tree");
 
     // Verify exact probability conservation for all contexts
-    for (context, node) in &tree.contexts {
+    for (context, node) in &tree.contexts() {
         let probabilities = node.get_all_probabilities(&config);
         let prob_sum: f64 = probabilities.values().sum();
         let error = (prob_sum - 1.0).abs();
@@ -845,13 +838,13 @@ fn test_information_theory_brutal_validation() {
     let context_tree = detector.model().context_tree();
 
     println!("    📊 DETERMINISTIC SEQUENCE ANALYSIS:");
-    for (context, node) in &context_tree.contexts {
+    for (context, node) in &context_tree.contexts() {
         println!("      Context: {context:?}");
         println!("        Counts: {:?}", node.counts());
         let probabilities = node.get_all_probabilities(&AnomalyGridConfig::default());
         let entropy = node.calculate_entropy(&AnomalyGridConfig::default());
-        println!("        Probabilities: {:?}", probabilities);
-        println!("        Entropy: {:.10}", entropy);
+        println!("        Probabilities: {probabilities:?}");
+        println!("        Entropy: {entropy:.10}");
 
         // Manual entropy calculation to verify formula
         let manual_entropy: f64 = probabilities
@@ -867,8 +860,7 @@ fn test_information_theory_brutal_validation() {
         // Verify entropy is non-negative
         assert!(
             entropy >= 0.0,
-            "Entropy must be non-negative: {:.10}",
-            entropy
+            "Entropy must be non-negative: {entropy:.10}"
         );
     }
 
@@ -891,7 +883,7 @@ fn test_information_theory_brutal_validation() {
 
     let uniform_tree = uniform_detector.model().context_tree();
 
-    for (context, node) in &uniform_tree.contexts {
+    for (context, node) in &uniform_tree.contexts() {
         if context == &vec!["A".to_string()] {
             let config = AnomalyGridConfig::default();
             let probabilities = node.get_all_probabilities(&config);
@@ -899,8 +891,8 @@ fn test_information_theory_brutal_validation() {
 
             println!("      Uniform Context A:");
             println!("        Counts: {:?}", node.counts());
-            println!("        Probabilities: {:?}", probabilities);
-            println!("        Entropy: {:.10}", entropy);
+            println!("        Probabilities: {probabilities:?}");
+            println!("        Entropy: {entropy:.10}");
 
             // Expected entropy for uniform distribution over 4 outcomes: log2(4) = 2.0
             let expected_entropy = 4.0_f64.log2();

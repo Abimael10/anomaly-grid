@@ -169,7 +169,7 @@ fn test_kl_divergence_properties() {
             continue;
         }
         
-        let kl_divergence = node.kl_divergence;
+        let kl_divergence = node.calculate_kl_divergence(&config);
         
         println!("    Context {:?}: KL divergence = {:.6}", context, kl_divergence);
         
@@ -219,7 +219,8 @@ fn test_probability_normalization() {
     let context_tree = detector.model().context_tree();
     
     for (context, node) in &context_tree.contexts {
-        let prob_sum: f64 = node.probabilities.values().sum();
+        let probabilities = node.get_all_probabilities(&config);
+        let prob_sum: f64 = probabilities.values().sum();
         let error = (prob_sum - 1.0).abs();
         
         println!("    Context {:?}: Σ P(x) = {:.10}, error = {:.2e}", 
@@ -254,8 +255,8 @@ fn test_laplace_smoothing_formula() {
         // P(B|A) = (2 + 2) / (3 + 2*2) = 4/7 ≈ 0.5714
         // P(C|A) = (1 + 2) / (3 + 2*2) = 3/7 ≈ 0.4286
         
-        let prob_b = node.probabilities.get("B").copied().unwrap_or(0.0);
-        let prob_c = node.probabilities.get("C").copied().unwrap_or(0.0);
+        let prob_b = node.get_probability("B", &config);
+        let prob_c = node.get_probability("C", &config);
         
         let expected_prob_b = 4.0 / 7.0;
         let expected_prob_c = 3.0 / 7.0;
@@ -297,8 +298,8 @@ fn test_conditional_probability_consistency() {
     
     if let Some(ab_node) = context_tree.get_context_node(&vec!["A".to_string(), "B".to_string()]) {
         if let Some(a_node) = context_tree.get_context_node(&vec!["A".to_string()]) {
-            let p_c_given_ab = ab_node.probabilities.get("C").copied().unwrap_or(0.0);
-            let p_b_given_a = a_node.probabilities.get("B").copied().unwrap_or(0.0);
+            let p_c_given_ab = ab_node.get_probability("C", &config);
+            let p_b_given_a = a_node.get_probability("B", &config);
             
             println!("    P(C|A,B) = {:.6}", p_c_given_ab);
             println!("    P(B|A) = {:.6}", p_b_given_a);
@@ -385,7 +386,8 @@ fn test_transition_matrix_properties() {
         }
         
         let state = &context[0];
-        let prob_sum: f64 = node.probabilities.values().sum();
+        let probabilities = node.get_all_probabilities(&config);
+        let prob_sum: f64 = probabilities.values().sum();
         
         println!("    State '{}': transition probabilities sum = {:.10}", state, prob_sum);
         
@@ -395,7 +397,7 @@ fn test_transition_matrix_properties() {
                 state, prob_sum);
         
         // All probabilities should be non-negative
-        for (next_state, &prob) in &node.probabilities {
+        for (next_state, prob) in &probabilities {
             assert!(prob >= -EPSILON, 
                     "Negative probability {} -> {}: {:.10}", 
                     state, next_state, prob);

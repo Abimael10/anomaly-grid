@@ -262,8 +262,8 @@ mod tests {
 
         // For this test, we just verify the calculation works
         // The actual comparison depends on the specific sizes
-        println!("Small usage: {} bytes", small_usage);
-        println!("Large usage: {} bytes", large_usage);
+        println!("Small usage: {small_usage} bytes");
+        println!("Large usage: {large_usage} bytes");
     }
 
     #[test]
