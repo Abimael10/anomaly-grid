@@ -19,6 +19,7 @@ use std::sync::Arc;
 /// A node in the context tree that stores transition statistics
 ///
 /// Uses optimized storage for small collections and StateId for memory efficiency
+/// Implements lazy computation with caching for entropy and KL divergence
 #[derive(Debug, Clone)]
 pub struct ContextNode {
     /// Optimized transition counts using SmallVec for small collections
@@ -27,6 +28,12 @@ pub struct ContextNode {
     total_count: usize,
     /// String interner for converting between strings and StateIds
     interner: Arc<StringInterner>,
+    /// Cached entropy value (computed lazily)
+    cached_entropy: Option<f64>,
+    /// Cached KL divergence value (computed lazily)
+    cached_kl_divergence: Option<f64>,
+    /// Configuration hash for cache invalidation
+    cached_config_hash: Option<u64>,
 }
 
 impl ContextNode {
