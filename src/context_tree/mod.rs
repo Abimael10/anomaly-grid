@@ -11,16 +11,17 @@
 use crate::config::AnomalyGridConfig;
 use crate::error::{AnomalyGridError, AnomalyGridResult};
 use crate::string_interner::{StateId, StringInterner};
+use crate::transition_counts::TransitionCounts;
 use std::collections::HashMap;
 use std::sync::Arc;
 
 /// A node in the context tree that stores transition statistics
 ///
-/// Uses StateId internally for memory efficiency while maintaining string-based API
+/// Uses optimized storage for small collections and StateId for memory efficiency
 #[derive(Debug, Clone)]
 pub struct ContextNode {
-    /// Raw transition counts using interned state IDs for memory efficiency
-    counts: HashMap<StateId, usize>,
+    /// Optimized transition counts using SmallVec for small collections
+    counts: TransitionCounts,
     /// Cached total count to avoid recomputation
     total_count: usize,
     /// String interner for converting between strings and StateIds
@@ -31,7 +32,7 @@ impl ContextNode {
     /// Create a new empty context node with string interner
     pub fn new(interner: Arc<StringInterner>) -> Self {
         Self {
-            counts: HashMap::new(),
+            counts: TransitionCounts::new(),
             total_count: 0,
             interner,
         }
@@ -40,13 +41,13 @@ impl ContextNode {
     /// Add a transition to this context using string interning
     pub fn add_transition(&mut self, next_state: &str) {
         let state_id = self.interner.get_or_intern(next_state);
-        *self.counts.entry(state_id).or_insert(0) += 1;
+        self.counts.increment(state_id);
         self.total_count += 1;
     }
 
     /// Add a transition using StateId directly (internal use)
     pub fn add_transition_by_id(&mut self, state_id: StateId) {
-        *self.counts.entry(state_id).or_insert(0) += 1;
+        self.counts.increment(state_id);
         self.total_count += 1;
     }
 
@@ -58,12 +59,12 @@ impl ContextNode {
     /// Get the count for a specific next state
     pub fn get_count(&self, next_state: &str) -> usize {
         let state_id = self.interner.get_or_intern(next_state);
-        self.counts.get(&state_id).copied().unwrap_or(0)
+        self.counts.get(state_id)
     }
 
     /// Get the count for a StateId directly (internal use)
     pub fn get_count_by_id(&self, state_id: StateId) -> usize {
-        self.counts.get(&state_id).copied().unwrap_or(0)
+        self.counts.get(state_id)
     }
 
     /// Get the number of unique next states
@@ -72,8 +73,8 @@ impl ContextNode {
     }
 
     /// Get all state IDs with their counts (internal use)
-    pub fn get_state_counts(&self) -> &HashMap<StateId, usize> {
-        &self.counts
+    pub fn get_state_counts(&self) -> impl Iterator<Item = (StateId, usize)> + '_ {
+        self.counts.iter()
     }
 
     /// Get the sum of all transition counts (for compatibility)
@@ -85,7 +86,7 @@ impl ContextNode {
     pub fn get_string_counts(&self) -> HashMap<String, usize> {
         self.counts
             .iter()
-            .filter_map(|(&state_id, &count)| {
+            .filter_map(|(state_id, count)| {
                 self.interner.get_string(state_id).map(|s| (s, count))
             })
             .collect()
@@ -125,7 +126,7 @@ impl ContextNode {
 
         self.counts
             .keys()
-            .map(|&state_id| {
+            .map(|state_id| {
                 let p = self.get_probability_by_id(state_id, config);
                 if p > 0.0 {
                     -p * p.log2()
@@ -146,7 +147,7 @@ impl ContextNode {
 
         self.counts
             .keys()
-            .map(|&state_id| {
+            .map(|state_id| {
                 let p = self.get_probability_by_id(state_id, config);
                 if p > 0.0 {
                     p * (p / uniform_prob).log2()
@@ -163,7 +164,7 @@ impl ContextNode {
     pub fn get_all_probabilities(&self, config: &AnomalyGridConfig) -> HashMap<String, f64> {
         self.counts
             .keys()
-            .filter_map(|&state_id| {
+            .filter_map(|state_id| {
                 self.interner.get_string(state_id).map(|state_string| {
                     let prob = self.get_probability_by_id(state_id, config);
                     (state_string, prob)
