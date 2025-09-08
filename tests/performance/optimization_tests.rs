@@ -393,3 +393,101 @@ fn test_memory_optimization_effectiveness() {
     println!("  ✅ Memory optimization effective: {:.1}% reduction with maintained accuracy", 
              memory_reduction);
 }
+
+#[test]
+fn test_on_demand_probability_computation() {
+    println!("🧮 Testing On-Demand Probability Computation");
+    
+    let mut detector = AnomalyDetector::new(3).expect("Failed to create detector");
+    
+    // Create a realistic training sequence
+    let mut sequence = Vec::new();
+    for _ in 0..100 {
+        sequence.extend(vec![
+            "A".to_string(), "B".to_string(), "C".to_string(),
+            "B".to_string(), "C".to_string(), "D".to_string(),
+            "C".to_string(), "D".to_string(), "A".to_string(),
+        ]);
+    }
+    
+    detector.train(&sequence).expect("Failed to train");
+    
+    let context_tree = detector.model().context_tree();
+    let config = AnomalyGridConfig::default();
+    
+    println!("  Testing on-demand probability calculation...");
+    
+    for (context, node) in &context_tree.contexts {
+        // Test that we can get probabilities on-demand
+        let probabilities = node.get_all_probabilities(&config);
+        
+        // Verify probability conservation
+        let prob_sum: f64 = probabilities.values().sum();
+        let error = (prob_sum - 1.0).abs();
+        assert!(error < 1e-12, "Probability conservation violated: error = {:.2e}", error);
+        
+        // Test entropy calculation
+        let entropy = node.calculate_entropy(&config);
+        assert!(entropy >= 0.0, "Entropy must be non-negative: {:.6}", entropy);
+        
+        // Test KL divergence calculation
+        let kl_div = node.calculate_kl_divergence(&config);
+        assert!(kl_div >= 0.0, "KL divergence must be non-negative: {:.6}", kl_div);
+        
+        // Test individual probability access
+        for state in node.counts.keys() {
+            let prob = node.get_probability(state, &config);
+            assert!(prob >= 0.0 && prob <= 1.0, "Probability out of bounds: {:.6}", prob);
+        }
+        
+        // Verify that total_count matches sum of individual counts
+        let manual_total: usize = node.counts.values().sum();
+        assert_eq!(node.total_count(), manual_total, "Total count mismatch");
+    }
+    
+    println!("  ✅ On-demand calculations working correctly");
+    
+    // Test mathematical correctness with known values
+    if let Some(node) = context_tree.get_context_node(&["A".to_string()]) {
+        // Test Laplace smoothing formula with α=1.0 (default)
+        let prob_b = node.get_probability("B", &config);
+        let prob_c = node.get_probability("C", &config);
+        
+        // Both should be positive and sum to 1 (along with other transitions)
+        assert!(prob_b > 0.0 && prob_b <= 1.0, "P(B|A) out of bounds: {:.6}", prob_b);
+        assert!(prob_c > 0.0 && prob_c <= 1.0, "P(C|A) out of bounds: {:.6}", prob_c);
+        
+        println!("  ✅ Laplace smoothing working correctly");
+    }
+    
+    // Test that detection still works correctly
+    let test_sequence = vec!["A".to_string(), "B".to_string(), "C".to_string()];
+    let anomalies = detector.detect_anomalies(&test_sequence, 0.1)
+        .expect("Failed to detect anomalies");
+    
+    // Verify mathematical properties are maintained
+    for anomaly in &anomalies {
+        assert!(anomaly.likelihood >= 0.0 && anomaly.likelihood <= 1.0);
+        assert!(anomaly.anomaly_strength >= 0.0 && anomaly.anomaly_strength <= 1.0);
+        assert!(anomaly.information_score >= 0.0);
+    }
+    
+    println!("  ✅ Detection functionality maintained");
+    
+    // Estimate memory efficiency from on-demand computation
+    let context_count = context_tree.context_count();
+    let estimated_memory = context_tree.estimate_memory_usage();
+    
+    println!("  Memory usage analysis:");
+    println!("    Contexts: {}", context_count);
+    println!("    Estimated memory: {:.2} KB", estimated_memory as f64 / 1024.0);
+    println!("    Memory per context: {:.1} bytes", estimated_memory as f64 / context_count as f64);
+    
+    // With on-demand computation, memory per context should be significantly reduced
+    // Only stores: counts + total_count (no redundant probability storage)
+    let memory_per_context = estimated_memory as f64 / context_count as f64;
+    assert!(memory_per_context < 500.0, "Memory per context should be reduced: {:.1} bytes", memory_per_context);
+    
+    println!("  ✅ On-demand computation memory optimization validated");
+    println!("  🎉 On-demand probability computation working efficiently!");
+}

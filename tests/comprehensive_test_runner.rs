@@ -300,36 +300,39 @@ fn test_context_tree_mathematical_properties() {
 
     // Test that all contexts have valid mathematical properties
     for (context, node) in &tree.contexts {
-        // Test probability conservation (MUST hold exactly)
-        let prob_sum: f64 = node.probabilities.values().sum();
+        // Test probability conservation (MUST hold exactly) - computed on-demand
+        let probabilities = node.get_all_probabilities(&config);
+        let prob_sum: f64 = probabilities.values().sum();
         assert!(
             (prob_sum - 1.0).abs() < ULTRA_STRICT_TOLERANCE,
             "Probability conservation violated for context {context:?}: sum = {prob_sum:.15}"
         );
 
-        // Test entropy bounds (MUST hold)
-        let n_outcomes = node.probabilities.len() as f64;
+        // Test entropy bounds (MUST hold) - computed on-demand
+        let entropy = node.calculate_entropy(&config);
+        let n_outcomes = node.vocab_size() as f64;
         let max_entropy = n_outcomes.log2();
         assert!(
-            node.entropy >= -ULTRA_STRICT_TOLERANCE,
+            entropy >= -ULTRA_STRICT_TOLERANCE,
             "Entropy must be non-negative for context {:?}: H = {:.15}",
             context,
-            node.entropy
+            entropy
         );
         assert!(
-            node.entropy <= max_entropy + ULTRA_STRICT_TOLERANCE,
+            entropy <= max_entropy + ULTRA_STRICT_TOLERANCE,
             "Entropy exceeds maximum for context {:?}: H = {:.15} > {:.15}",
             context,
-            node.entropy,
+            entropy,
             max_entropy
         );
 
-        // Test KL divergence properties (MUST hold)
+        // Test KL divergence properties (MUST hold) - computed on-demand
+        let kl_divergence = node.calculate_kl_divergence(&config);
         assert!(
-            node.kl_divergence >= -ULTRA_STRICT_TOLERANCE,
+            kl_divergence >= -ULTRA_STRICT_TOLERANCE,
             "KL divergence must be non-negative for context {:?}: KL = {:.15}",
             context,
-            node.kl_divergence
+            kl_divergence
         );
     }
 }
@@ -353,7 +356,8 @@ fn test_context_tree_probability_conservation() {
 
     // Verify exact probability conservation for all contexts
     for (context, node) in &tree.contexts {
-        let prob_sum: f64 = node.probabilities.values().sum();
+        let probabilities = node.get_all_probabilities(&config);
+        let prob_sum: f64 = probabilities.values().sum();
         let error = (prob_sum - 1.0).abs();
 
         assert!(
@@ -362,7 +366,7 @@ fn test_context_tree_probability_conservation() {
         );
 
         // Verify all individual probabilities are in [0,1]
-        for (symbol, &prob) in &node.probabilities {
+        for (symbol, &prob) in &probabilities {
             assert!(
                 (0.0..=1.0).contains(&prob),
                 "Probability out of bounds for {symbol}|{context:?}: P = {prob:.15}"
@@ -402,8 +406,8 @@ fn test_context_tree_laplace_smoothing_exact() {
         let expected_prob_b = 4.0 / 7.0;
         let expected_prob_c = 3.0 / 7.0;
 
-        let actual_prob_b = node.probabilities.get("B").copied().unwrap_or(0.0);
-        let actual_prob_c = node.probabilities.get("C").copied().unwrap_or(0.0);
+        let actual_prob_b = node.get_probability("B", &config);
+        let actual_prob_c = node.get_probability("C", &config);
 
         let error_b = (actual_prob_b - expected_prob_b).abs();
         let error_c = (actual_prob_c - expected_prob_c).abs();
@@ -844,26 +848,27 @@ fn test_information_theory_brutal_validation() {
     for (context, node) in &context_tree.contexts {
         println!("      Context: {context:?}");
         println!("        Counts: {:?}", node.counts);
-        println!("        Probabilities: {:?}", node.probabilities);
-        println!("        Entropy: {:.10}", node.entropy);
+        let probabilities = node.get_all_probabilities(&AnomalyGridConfig::default());
+        let entropy = node.calculate_entropy(&AnomalyGridConfig::default());
+        println!("        Probabilities: {:?}", probabilities);
+        println!("        Entropy: {:.10}", entropy);
 
         // Manual entropy calculation to verify formula
-        let manual_entropy: f64 = node
-            .probabilities
+        let manual_entropy: f64 = probabilities
             .values()
             .map(|&p| if p > 0.0 { -p * p.log2() } else { 0.0 })
             .sum();
         println!("        Manual entropy: {manual_entropy:.10}");
 
         // Check if probabilities sum to 1
-        let prob_sum: f64 = node.probabilities.values().sum();
+        let prob_sum: f64 = probabilities.values().sum();
         println!("        Probability sum: {prob_sum:.10}");
 
         // Verify entropy is non-negative
         assert!(
-            node.entropy >= 0.0,
+            entropy >= 0.0,
             "Entropy must be non-negative: {:.10}",
-            node.entropy
+            entropy
         );
     }
 
@@ -888,16 +893,20 @@ fn test_information_theory_brutal_validation() {
 
     for (context, node) in &uniform_tree.contexts {
         if context == &vec!["A".to_string()] {
+            let config = AnomalyGridConfig::default();
+            let probabilities = node.get_all_probabilities(&config);
+            let entropy = node.calculate_entropy(&config);
+            
             println!("      Uniform Context A:");
             println!("        Counts: {:?}", node.counts);
-            println!("        Probabilities: {:?}", node.probabilities);
-            println!("        Entropy: {:.10}", node.entropy);
+            println!("        Probabilities: {:?}", probabilities);
+            println!("        Entropy: {:.10}", entropy);
 
             // Expected entropy for uniform distribution over 4 outcomes: log2(4) = 2.0
             let expected_entropy = 4.0_f64.log2();
             println!("        Expected entropy: {expected_entropy:.10}");
 
-            let error = (node.entropy - expected_entropy).abs();
+            let error = (entropy - expected_entropy).abs();
             println!("        Error: {error:.2e}");
 
             // This should be much closer to 2.0
@@ -917,7 +926,7 @@ fn test_probability_theory_brutal_validation() {
     let config = AnomalyGridConfig::default()
         .with_smoothing_alpha(1.0)
         .expect("Failed to set alpha");
-    let mut detector = AnomalyDetector::with_config(config).expect("Failed to create detector");
+    let mut detector = AnomalyDetector::with_config(config.clone()).expect("Failed to create detector");
 
     // Create sequence with exact known counts
     let sequence = vec![
@@ -941,8 +950,8 @@ fn test_probability_theory_brutal_validation() {
         let expected_prob_b = 3.0 / 5.0;
         let expected_prob_c = 2.0 / 5.0;
 
-        let actual_prob_b = node.probabilities.get("B").copied().unwrap_or(0.0);
-        let actual_prob_c = node.probabilities.get("C").copied().unwrap_or(0.0);
+        let actual_prob_b = node.get_probability("B", &config);
+        let actual_prob_c = node.get_probability("C", &config);
 
         let error_b = (actual_prob_b - expected_prob_b).abs();
         let error_c = (actual_prob_c - expected_prob_c).abs();
