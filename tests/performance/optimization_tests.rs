@@ -493,6 +493,74 @@ fn test_on_demand_probability_computation() {
 }
 
 #[test]
+fn test_small_collection_memory_optimization() {
+    println!("Testing Small Collection Memory Optimization");
+    
+    use anomaly_grid::transition_counts::TransitionCounts;
+    use anomaly_grid::string_interner::StateId;
+    
+    // Test TransitionCounts efficiency
+    let mut small_counts = TransitionCounts::new();
+    assert!(small_counts.is_small(), "Should start as small collection");
+    
+    // Add a few transitions
+    for i in 1..=3 {
+        small_counts.increment(StateId::new(i));
+    }
+    
+    assert!(small_counts.is_small(), "Should remain small with 3 items");
+    assert_eq!(small_counts.len(), 3);
+    
+    let small_memory = small_counts.memory_usage();
+    
+    // Test promotion to large collection
+    let mut large_counts = TransitionCounts::new();
+    for i in 1..=10 {
+        large_counts.increment(StateId::new(i));
+    }
+    
+    assert!(!large_counts.is_small(), "Should promote to large collection");
+    assert_eq!(large_counts.len(), 10);
+    
+    let large_memory = large_counts.memory_usage();
+    
+    // Verify functionality is preserved
+    for i in 1..=10 {
+        assert_eq!(large_counts.get(StateId::new(i)), 1);
+    }
+    
+    // Test with real detector
+    let mut detector = AnomalyDetector::new(2).expect("Failed to create detector");
+    let sequence: Vec<String> = (0..1000)
+        .map(|i| format!("S{}", i % 5))
+        .collect();
+    
+    detector.train(&sequence).expect("Failed to train");
+    
+    let context_tree = detector.model().context_tree();
+    let context_count = context_tree.context_count();
+    let memory_usage = context_tree.estimate_memory_usage();
+    
+    // Analyze collection sizes
+    let stats = anomaly_grid::collection_analysis::analyze_collection_sizes(&detector);
+    
+    // Verify optimization is working
+    assert!(context_count > 0, "Should create contexts");
+    assert!(memory_usage > 0, "Should use some memory");
+    assert!(stats.small_collection_percentage >= 80.0, 
+           "Most contexts should be small: {:.1}%", stats.small_collection_percentage);
+    
+    let memory_per_context = memory_usage as f64 / context_count as f64;
+    assert!(memory_per_context < 500.0, 
+           "Memory per context should be efficient: {:.1} bytes", memory_per_context);
+    
+    println!("  Small collection optimization validated");
+    println!("  Small: {} bytes, Large: {} bytes", small_memory, large_memory);
+    println!("  Small collections: {:.1}%", stats.small_collection_percentage);
+    println!("  Memory per context: {:.1} bytes", memory_per_context);
+}
+
+#[test]
 fn test_string_interning_integration() {
     println!("🔗 Testing String Interning Integration");
     
