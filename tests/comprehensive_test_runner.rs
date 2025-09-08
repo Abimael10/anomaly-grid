@@ -309,7 +309,7 @@ fn test_context_tree_mathematical_properties() {
         );
 
         // Test entropy bounds (MUST hold) - computed on-demand
-        let entropy = node.calculate_entropy(&config);
+        let entropy = node.compute_entropy(&config);
         let n_outcomes = node.vocab_size() as f64;
         let max_entropy = n_outcomes.log2();
         assert!(
