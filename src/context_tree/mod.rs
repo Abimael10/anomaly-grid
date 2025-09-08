@@ -3,13 +3,16 @@
 //! This module implements context storage and probability estimation for building
 //! variable-order Markov models with information-theoretic measures.
 //!
-//! MEMORY OPTIMIZATION (Task 2): Removed redundant storage of probabilities,
-//! entropy, and KL divergence. These are now computed on-demand, reducing
-//! memory usage by 30-40% per context node.
+//! MEMORY OPTIMIZATIONS:
+//! - String interning: Uses StateId instead of String to reduce duplication
+//! - On-demand computation: Probabilities calculated when needed, not stored
+//! - Cached totals: Avoids recomputing transition counts repeatedly
 
 use crate::config::AnomalyGridConfig;
 use crate::error::{AnomalyGridError, AnomalyGridResult};
+use crate::string_interner::{StateId, StringInterner};
 use std::collections::HashMap;
+use std::sync::Arc;
 
 /// A node in the context tree that stores transition statistics
 /// 
