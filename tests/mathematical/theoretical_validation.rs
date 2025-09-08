@@ -169,7 +169,7 @@ fn test_kl_divergence_properties() {
             continue;
         }
         
-        let kl_divergence = node.calculate_kl_divergence(&config);
+        let kl_divergence = node.compute_kl_divergence(&config);
         
         println!("    Context {:?}: KL divergence = {:.6}", context, kl_divergence);
         

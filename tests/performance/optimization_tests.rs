@@ -427,11 +427,11 @@ fn test_on_demand_probability_computation() {
         assert!(error < 1e-12, "Probability conservation violated: error = {:.2e}", error);
         
         // Test entropy calculation
-        let entropy = node.calculate_entropy(&config);
+        let entropy = node.compute_entropy(&config);
         assert!(entropy >= 0.0, "Entropy must be non-negative: {:.6}", entropy);
         
-        // Test KL divergence calculation
-        let kl_div = node.calculate_kl_divergence(&config);
+        // Test KL divergence bounds
+        let kl_div = node.compute_kl_divergence(&config);
         assert!(kl_div >= 0.0, "KL divergence must be non-negative: {:.6}", kl_div);
         
         // Test individual probability access

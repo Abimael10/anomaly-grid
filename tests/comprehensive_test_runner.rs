@@ -322,7 +322,7 @@ fn test_context_tree_mathematical_properties() {
         );
 
         // Test KL divergence properties (MUST hold) - computed on-demand
-        let kl_divergence = node.calculate_kl_divergence(&config);
+        let kl_divergence = node.compute_kl_divergence(&config);
         assert!(
             kl_divergence >= -ULTRA_STRICT_TOLERANCE,
             "KL divergence must be non-negative for context {context:?}: KL = {kl_divergence:.15}"
@@ -842,7 +842,7 @@ fn test_information_theory_brutal_validation() {
         println!("      Context: {context:?}");
         println!("        Counts: {:?}", node.counts());
         let probabilities = node.get_all_probabilities(&AnomalyGridConfig::default());
-        let entropy = node.calculate_entropy(&AnomalyGridConfig::default());
+        let entropy = node.compute_entropy(&AnomalyGridConfig::default());
         println!("        Probabilities: {probabilities:?}");
         println!("        Entropy: {entropy:.10}");
 
@@ -887,7 +887,7 @@ fn test_information_theory_brutal_validation() {
         if context == &vec!["A".to_string()] {
             let config = AnomalyGridConfig::default();
             let probabilities = node.get_all_probabilities(&config);
-            let entropy = node.calculate_entropy(&config);
+            let entropy = node.compute_entropy(&config);
 
             println!("      Uniform Context A:");
             println!("        Counts: {:?}", node.counts());

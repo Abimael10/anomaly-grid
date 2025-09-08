@@ -166,7 +166,7 @@ fn test_context_tree_build_from_sequence() {
         // Entropy bounds
         let n_outcomes = probabilities.len() as f64;
         let max_entropy = n_outcomes.log2();
-        let entropy = node.calculate_entropy(&config);
+        let entropy = node.compute_entropy(&config);
         assert!(entropy >= 0.0, "Entropy must be non-negative for context {:?}", context);
         assert!(entropy <= max_entropy + 1e-10, "Entropy exceeds maximum for context {:?}", context);
     }
@@ -272,7 +272,7 @@ fn test_context_tree_entropy_bounds() {
         let probabilities = node.get_all_probabilities(&config);
         let n_outcomes = probabilities.len() as f64;
         let max_entropy = n_outcomes.log2();
-        let entropy = node.calculate_entropy(&config);
+        let entropy = node.compute_entropy(&config);
         
         assert!(
             entropy >= -1e-10,
