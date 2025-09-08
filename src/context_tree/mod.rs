@@ -203,7 +203,7 @@ impl ContextTree {
     /// # Performance Guarantees
     /// - Memory usage is bounded by config.memory_limit if set
     /// - Processing time scales linearly with sequence length
-    /// - OPTIMIZED: No redundant probability storage during training
+    /// - Uses string interning to reduce memory duplication
     pub fn build_from_sequence(
         &mut self,
         sequence: &[String],
@@ -218,9 +218,15 @@ impl ContextTree {
             ));
         }
 
+        // Convert sequence to StateIds for efficient processing
+        let state_ids: Vec<StateId> = sequence
+            .iter()
+            .map(|s| self.interner.get_or_intern(s))
+            .collect();
+
         // Extract contexts of all orders from 1 to max_order
         for window_size in 1..=self.max_order {
-            for window in sequence.windows(window_size + 1) {
+            for window in state_ids.windows(window_size + 1) {
                 // Check memory limit before adding new context
                 if let Some(limit) = config.memory_limit {
                     if self.contexts.len() >= limit {
@@ -232,14 +238,15 @@ impl ContextTree {
                 }
 
                 let context = window[..window_size].to_vec();
-                let next_state = &window[window_size];
+                let next_state_id = window[window_size];
 
-                let node = self.contexts.entry(context).or_default();
-                node.add_transition(next_state.clone());
+                let node = self.contexts.entry(context).or_insert_with(|| {
+                    ContextNode::new(Arc::clone(&self.interner))
+                });
+                node.add_transition_by_id(next_state_id);
             }
         }
 
-        // No need to pre-calculate probabilities - they're computed on-demand
         Ok(())
     }
 
