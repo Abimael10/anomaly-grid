@@ -43,6 +43,9 @@ impl ContextNode {
             counts: TransitionCounts::new(),
             total_count: 0,
             interner,
+            cached_entropy: None,
+            cached_kl_divergence: None,
+            cached_config_hash: None,
         }
     }
 
