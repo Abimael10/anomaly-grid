@@ -81,11 +81,17 @@ impl ContextNode {
     /// 
     /// Computes probability on-demand: P(state) = (count + α) / (total + α * |V|)
     pub fn get_probability(&self, next_state: &str, config: &AnomalyGridConfig) -> f64 {
+        let state_id = self.interner.get_or_intern(next_state);
+        self.get_probability_by_id(state_id, config)
+    }
+
+    /// Get probability for a StateId directly (internal use)
+    pub fn get_probability_by_id(&self, state_id: StateId, config: &AnomalyGridConfig) -> f64 {
         if self.total_count == 0 {
             return 1.0 / (self.vocab_size() as f64).max(1.0);
         }
 
-        let count = self.get_count(next_state) as f64;
+        let count = self.get_count_by_id(state_id) as f64;
         let vocab_size = self.vocab_size() as f64;
         
         (count + config.smoothing_alpha) / 
