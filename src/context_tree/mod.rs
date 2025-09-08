@@ -207,8 +207,43 @@ impl ContextNode {
             .sum()
     }
 
-    /// Calculate KL divergence from uniform distribution on-demand
-    pub fn calculate_kl_divergence(&self, config: &AnomalyGridConfig) -> f64 {
+    /// Calculate KL divergence from uniform distribution with lazy computation and caching
+    pub fn calculate_kl_divergence(&mut self, config: &AnomalyGridConfig) -> f64 {
+        // Check if we have a valid cached value
+        if self.is_cache_valid(config) {
+            if let Some(cached_kl_div) = self.cached_kl_divergence {
+                return cached_kl_div;
+            }
+        }
+
+        // Compute KL divergence
+        let kl_divergence = if self.total_count == 0 {
+            0.0
+        } else {
+            let uniform_prob = 1.0 / self.vocab_size() as f64;
+            
+            self.counts
+                .keys()
+                .map(|state_id| {
+                    let p = self.get_probability_by_id(state_id, config);
+                    if p > 0.0 {
+                        p * (p / uniform_prob).log2()
+                    } else {
+                        0.0
+                    }
+                })
+                .sum()
+        };
+
+        // Cache the result
+        self.cached_kl_divergence = Some(kl_divergence);
+        self.cached_config_hash = Some(Self::compute_config_hash(config));
+        
+        kl_divergence
+    }
+
+    /// Calculate KL divergence from uniform distribution without caching (for immutable access)
+    pub fn compute_kl_divergence(&self, config: &AnomalyGridConfig) -> f64 {
         if self.total_count == 0 {
             return 0.0;
         }
