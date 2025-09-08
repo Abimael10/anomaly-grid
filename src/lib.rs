@@ -9,10 +9,9 @@
 //! # Features
 //!
 //! - **Variable-Order Markov Models**: Hierarchical context selection with Laplace smoothing
-//! - **Information Theory**: Shannon entropy, KL divergence, and surprise quantification  
+//! - **Information Theory**: Shannon entropy, KL divergence  
 //! - **Hierarchical Context Selection**: Automatic fallback from longer to shorter contexts
 //! - **Parallel Processing**: Batch analysis using Rayon for multiple sequences
-//! - **Numerical Stability**: Robust probability estimation with smoothing
 //!
 //! # Quick Start
 //!
@@ -65,6 +64,7 @@ pub mod context_tree;
 pub mod error;
 pub mod markov_model;
 pub mod performance;
+pub mod string_interner;
 
 // Re-export main types for convenience
 pub use anomaly_detector::{batch_process_sequences, AnomalyDetector, AnomalyScore};
