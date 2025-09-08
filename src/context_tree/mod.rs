@@ -76,6 +76,21 @@ impl ContextNode {
         &self.counts
     }
 
+    /// Get the sum of all transition counts (for compatibility)
+    pub fn total_transitions(&self) -> usize {
+        self.total_count
+    }
+
+    /// Get all counts as strings for compatibility with performance module
+    pub fn get_string_counts(&self) -> HashMap<String, usize> {
+        self.counts
+            .iter()
+            .filter_map(|(&state_id, &count)| {
+                self.interner.get_string(state_id).map(|s| (s, count))
+            })
+            .collect()
+    }
+
     /// Get the probability for a specific next state using Laplace smoothing
     /// 
     /// Computes probability on-demand: P(state) = (count + α) / (total + α * |V|)
@@ -149,7 +164,11 @@ impl ContextNode {
     }
 }
 
-// Note: Default implementation removed as ContextNode now requires StringInterner
+impl Default for ContextNode {
+    fn default() -> Self {
+        Self::new(Arc::new(StringInterner::new()))
+    }
+}
 
 /// Context tree for storing variable-order Markov chain contexts
 /// 
@@ -245,14 +264,8 @@ impl ContextTree {
 
     /// Get the transition probability for a given context and next state
     pub fn get_transition_probability(&self, context: &[String], next_state: &str) -> Option<f64> {
-        // Convert string context to StateId context
-        let context_ids: Vec<StateId> = context
-            .iter()
-            .map(|s| self.interner.get_or_intern(s))
-            .collect();
-        
         self.contexts
-            .get(&context_ids)
+            .get(context)
             .map(|node| node.get_probability(next_state, &AnomalyGridConfig::default()))
     }
 
@@ -263,41 +276,21 @@ impl ContextTree {
         next_state: &str,
         config: &AnomalyGridConfig
     ) -> Option<f64> {
-        // Convert string context to StateId context
-        let context_ids: Vec<StateId> = context
-            .iter()
-            .map(|s| self.interner.get_or_intern(s))
-            .collect();
-        
         self.contexts
-            .get(&context_ids)
+            .get(context)
             .map(|node| node.get_probability(next_state, config))
     }
 
     /// Get a context node for the given context
     pub fn get_context_node(&self, context: &[String]) -> Option<&ContextNode> {
-        // Convert string context to StateId context
-        let context_ids: Vec<StateId> = context
-            .iter()
-            .map(|s| self.interner.get_or_intern(s))
-            .collect();
-        
-        self.contexts.get(&context_ids)
+        self.contexts.get(context)
     }
 
-    /// Get all contexts of a specific order (returns string representations)
-    pub fn get_contexts_of_order(&self, order: usize) -> Vec<Vec<String>> {
+    /// Get all contexts of a specific order
+    pub fn get_contexts_of_order(&self, order: usize) -> Vec<&Vec<String>> {
         self.contexts
             .keys()
             .filter(|context| context.len() == order)
-            .filter_map(|context_ids| {
-                // Convert StateId context back to strings
-                let context_strings: Option<Vec<String>> = context_ids
-                    .iter()
-                    .map(|&id| self.interner.get_string(id))
-                    .collect();
-                context_strings
-            })
             .collect()
     }
 
@@ -309,15 +302,5 @@ impl ContextTree {
     /// Get access to the string interner
     pub fn interner(&self) -> &Arc<StringInterner> {
         &self.interner
-    }
-
-    /// Get internal contexts for performance operations (internal use)
-    pub(crate) fn contexts_mut(&mut self) -> &mut HashMap<Vec<StateId>, ContextNode> {
-        &mut self.contexts
-    }
-
-    /// Get internal contexts for read operations (internal use)
-    pub(crate) fn contexts(&self) -> &HashMap<Vec<StateId>, ContextNode> {
-        &self.contexts
     }
 }
