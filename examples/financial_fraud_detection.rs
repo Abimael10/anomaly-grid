@@ -11,10 +11,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("💳 Financial Fraud Detection with Anomaly Grid");
     println!("Detecting credit card fraud, velocity attacks, and suspicious patterns\n");
 
-    // Generate 6 months of normal transaction data
-    let normal_transactions = generate_normal_transactions(180); // 6 months
+    // Generate 1 month of normal transaction data (reduced for performance)
+    let normal_transactions = generate_normal_transactions(30); // 1 month
     println!(
-        "Generated {} normal transactions (6 months)",
+        "Generated {} normal transactions (1 month)",
         normal_transactions.len()
     );
 
@@ -82,7 +82,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Batch processing for high-volume scenarios
     println!("\n📦 High-Volume Transaction Processing");
-    let batch_transactions = generate_mixed_transaction_batch(10000);
+    let batch_transactions = generate_mixed_transaction_batch(1000); // Reduced from 10000
 
     let batch_start = Instant::now();
     let mut fraud_count = 0;

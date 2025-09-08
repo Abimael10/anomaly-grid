@@ -11,10 +11,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🖥️ System Log Analysis with Anomaly Grid");
     println!("Detecting security incidents and system anomalies\n");
 
-    // Generate 90 days of normal system logs
-    let normal_logs = generate_normal_system_logs(90);
+    // Generate 7 days of normal system logs (reduced for performance)
+    let normal_logs = generate_normal_system_logs(7);
     println!(
-        "Generated {} normal log entries (90 days)",
+        "Generated {} normal log entries (7 days)",
         normal_logs.len()
     );
 

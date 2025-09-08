@@ -11,18 +11,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🏭 Industrial IoT Monitoring with Anomaly Grid");
     println!("Predictive maintenance and equipment failure detection\n");
 
-    // Simulate 1 year of normal industrial operations
-    let normal_operations = generate_industrial_data(365); // 1 year
+    // Generate 1 month of normal sensor data (reduced for performance)
+    let normal_readings = generate_industrial_data(30);
     println!(
-        "Generated {} sensor readings (1 year)",
-        normal_operations.len()
+        "Generated {} sensor readings (1 month)",
+        normal_readings.len()
     );
 
     // Initialize anomaly detection for IoT sensor data
     let mut detector = AnomalyDetector::new(4)?; // Order 4 for sensor patterns
 
     // Train on normal operational data
-    detector.train(&normal_operations)?;
+    // Train on normal operational patterns
+    detector.train(&normal_readings)?;
 
     // Equipment monitoring scenarios
     println!("\n🔧 Equipment Health Monitoring");

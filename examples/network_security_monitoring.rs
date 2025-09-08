@@ -12,19 +12,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🛡️ Network Security Monitoring with Anomaly Grid");
     println!("Detecting APTs, DDoS, and network intrusions\n");
 
-    // Simulate 30 days of normal enterprise network traffic
-    let normal_traffic = generate_enterprise_traffic(30);
+    // Generate 5 days of normal network traffic (reduced for performance)
+    let normal_events = generate_enterprise_traffic(5);
     println!(
-        "Generated {} normal network events (30 days)",
-        normal_traffic.len()
+        "Generated {} normal network events (5 days)",
+        normal_events.len()
     );
 
     // Initialize anomaly detection system
     let mut detector = AnomalyDetector::new(4)?; // Order 4 for complex patterns
 
-    // Train on normal network traffic patterns
+    // Train on normal network patterns
     let train_start = Instant::now();
-    detector.train(&normal_traffic)?;
+    detector.train(&normal_events)?;
     println!("Training completed in {:?}", train_start.elapsed());
 
     // Real-time monitoring simulation
