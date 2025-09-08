@@ -126,6 +126,22 @@ impl TrieNode {
         
         size
     }
+
+    /// Reset the trie node for reuse in memory pool
+    pub fn reset(&mut self, parent: Option<NodeId>, state_from_parent: Option<StateId>) {
+        self.children.clear();
+        self.context_data = None;
+        self.parent = parent;
+        self.state_from_parent = state_from_parent;
+    }
+
+    /// Clear the trie node data for memory pool return
+    pub fn clear(&mut self) {
+        self.children.clear();
+        self.context_data = None;
+        self.parent = None;
+        self.state_from_parent = None;
+    }
 }
 
 /// Trie-based context storage with prefix sharing
