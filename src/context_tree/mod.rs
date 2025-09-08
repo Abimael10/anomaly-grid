@@ -252,8 +252,14 @@ impl ContextTree {
 
     /// Get the transition probability for a given context and next state
     pub fn get_transition_probability(&self, context: &[String], next_state: &str) -> Option<f64> {
+        // Convert string context to StateId context
+        let context_ids: Vec<StateId> = context
+            .iter()
+            .map(|s| self.interner.get_or_intern(s))
+            .collect();
+        
         self.contexts
-            .get(context)
+            .get(&context_ids)
             .map(|node| node.get_probability(next_state, &AnomalyGridConfig::default()))
     }
 
@@ -264,26 +270,51 @@ impl ContextTree {
         next_state: &str,
         config: &AnomalyGridConfig
     ) -> Option<f64> {
+        // Convert string context to StateId context
+        let context_ids: Vec<StateId> = context
+            .iter()
+            .map(|s| self.interner.get_or_intern(s))
+            .collect();
+        
         self.contexts
-            .get(context)
+            .get(&context_ids)
             .map(|node| node.get_probability(next_state, config))
     }
 
     /// Get a context node for the given context
     pub fn get_context_node(&self, context: &[String]) -> Option<&ContextNode> {
-        self.contexts.get(context)
+        // Convert string context to StateId context
+        let context_ids: Vec<StateId> = context
+            .iter()
+            .map(|s| self.interner.get_or_intern(s))
+            .collect();
+        
+        self.contexts.get(&context_ids)
     }
 
-    /// Get all contexts of a specific order
-    pub fn get_contexts_of_order(&self, order: usize) -> Vec<&Vec<String>> {
+    /// Get all contexts of a specific order (returns string representations)
+    pub fn get_contexts_of_order(&self, order: usize) -> Vec<Vec<String>> {
         self.contexts
             .keys()
             .filter(|context| context.len() == order)
+            .filter_map(|context_ids| {
+                // Convert StateId context back to strings
+                let context_strings: Option<Vec<String>> = context_ids
+                    .iter()
+                    .map(|&id| self.interner.get_string(id))
+                    .collect();
+                context_strings
+            })
             .collect()
     }
 
     /// Get the number of contexts stored
     pub fn context_count(&self) -> usize {
         self.contexts.len()
+    }
+
+    /// Get access to the string interner
+    pub fn interner(&self) -> &Arc<StringInterner> {
+        &self.interner
     }
 }
