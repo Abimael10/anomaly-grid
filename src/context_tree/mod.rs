@@ -54,12 +54,21 @@ impl ContextNode {
         let state_id = self.interner.get_or_intern(next_state);
         self.counts.increment(state_id);
         self.total_count += 1;
+        self.invalidate_cache();
     }
 
     /// Add a transition using StateId directly (internal use)
     pub fn add_transition_by_id(&mut self, state_id: StateId) {
         self.counts.increment(state_id);
         self.total_count += 1;
+        self.invalidate_cache();
+    }
+
+    /// Invalidate cached computations when data changes
+    fn invalidate_cache(&mut self) {
+        self.cached_entropy = None;
+        self.cached_kl_divergence = None;
+        self.cached_config_hash = None;
     }
 
     /// Get the total number of transitions from this context
