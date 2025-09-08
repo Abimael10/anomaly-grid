@@ -1199,10 +1199,8 @@ fn test_performance_monitoring() {
     let metrics = detector.performance_metrics();
 
     // Verify metrics are reasonable (training might be very fast in release mode)
-    assert!(
-        metrics.training_time_ms >= 0,
-        "Training time should be non-negative: {}", metrics.training_time_ms
-    );
+    // Note: training_time_ms is u64, so always >= 0, but we check it's recorded
+    println!("Training time recorded: {} ms", metrics.training_time_ms);
     assert!(
         metrics.context_count > 0,
         "Context count should be positive"
