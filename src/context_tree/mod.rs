@@ -91,6 +91,11 @@ impl ContextNode {
             .collect()
     }
 
+    /// Get counts for debugging (returns string representation)
+    pub fn counts(&self) -> HashMap<String, usize> {
+        self.get_string_counts()
+    }
+
     /// Get the probability for a specific next state using Laplace smoothing
     /// 
     /// Computes probability on-demand: P(state) = (count + α) / (total + α * |V|)
