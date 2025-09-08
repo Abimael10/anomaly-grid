@@ -26,7 +26,7 @@ impl NodeId {
 }
 
 /// A node in the context trie
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct TrieNode {
     /// Children nodes: (StateId, NodeId) pairs
     /// Uses SmallVec for memory efficiency since most nodes have few children

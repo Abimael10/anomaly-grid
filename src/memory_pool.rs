@@ -86,10 +86,7 @@ impl MemoryPool {
             self.stats.context_node_hits += 1;
             
             // Reset the node for reuse
-            let mut node = std::mem::replace(
-                &mut self.context_nodes[index],
-                ContextNode::default()
-            );
+            let mut node = std::mem::take(&mut self.context_nodes[index]);
             node.reset(interner);
             node
         } else {
@@ -125,10 +122,7 @@ impl MemoryPool {
             self.stats.trie_node_hits += 1;
             
             // Reset the node for reuse
-            let mut node = std::mem::replace(
-                &mut self.trie_nodes[index],
-                TrieNode::new(None, None)
-            );
+            let mut node = std::mem::take(&mut self.trie_nodes[index]);
             node.reset(parent, state_from_parent);
             node
         } else {
@@ -436,7 +430,7 @@ mod tests {
         let (context_hit_rate, _, _) = pool.hit_rates();
         
         // Verify we have low hit rate
-        assert!(context_hit_rate < 0.8, "Hit rate should be low: {:.2}", context_hit_rate);
+        assert!(context_hit_rate < 0.8, "Hit rate should be low: {context_hit_rate:.2}");
         
         pool.auto_tune();
         
