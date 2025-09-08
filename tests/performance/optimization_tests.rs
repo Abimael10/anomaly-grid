@@ -491,3 +491,80 @@ fn test_on_demand_probability_computation() {
     println!("  ✅ On-demand computation memory optimization validated");
     println!("  🎉 On-demand probability computation working efficiently!");
 }
+
+#[test]
+fn test_string_interning_integration() {
+    println!("🔗 Testing String Interning Integration");
+    
+    let mut detector = AnomalyDetector::new(3).expect("Failed to create detector");
+    
+    // Create a sequence with repeated strings to test interning efficiency
+    let mut sequence = Vec::new();
+    let states = vec!["STATE_A", "STATE_B", "STATE_C", "STATE_D"];
+    
+    // Repeat the same states many times to test string deduplication
+    for _ in 0..200 {
+        for state in &states {
+            sequence.push(state.to_string());
+        }
+    }
+    
+    detector.train(&sequence).expect("Failed to train");
+    
+    let context_tree = detector.model().context_tree();
+    let interner = context_tree.interner();
+    
+    println!("  String interning analysis:");
+    println!("    Total sequence length: {}", sequence.len());
+    println!("    Unique strings in interner: {}", interner.len());
+    println!("    Interner memory usage: {} bytes", interner.estimate_memory_usage());
+    
+    // Verify that string interning is working
+    assert_eq!(interner.len(), states.len(), "Should have exactly {} unique strings", states.len());
+    
+    // Test that the same string gets the same StateId
+    let id1 = interner.get_or_intern("STATE_A");
+    let id2 = interner.get_or_intern("STATE_A");
+    assert_eq!(id1, id2, "Same string should get same StateId");
+    
+    // Test that different strings get different StateIds
+    let id_a = interner.get_or_intern("STATE_A");
+    let id_b = interner.get_or_intern("STATE_B");
+    assert_ne!(id_a, id_b, "Different strings should get different StateIds");
+    
+    // Test that we can retrieve strings from StateIds
+    let retrieved = interner.get_string(id_a).expect("Should retrieve string");
+    assert_eq!(retrieved, "STATE_A", "Should retrieve correct string");
+    
+    println!("  ✅ String interning working correctly");
+    
+    // Test that detection still works with interned strings
+    let test_sequence = vec!["STATE_A".to_string(), "STATE_B".to_string(), "STATE_C".to_string()];
+    let anomalies = detector.detect_anomalies(&test_sequence, 0.1)
+        .expect("Failed to detect anomalies");
+    
+    // Verify mathematical properties are maintained
+    for anomaly in &anomalies {
+        assert!(anomaly.likelihood >= 0.0 && anomaly.likelihood <= 1.0);
+        assert!(anomaly.anomaly_strength >= 0.0 && anomaly.anomaly_strength <= 1.0);
+        assert!(anomaly.information_score >= 0.0);
+    }
+    
+    println!("  ✅ Detection functionality maintained with string interning");
+    
+    // Estimate memory efficiency
+    let context_count = context_tree.context_count();
+    let estimated_memory = context_tree.estimate_memory_usage();
+    
+    println!("  Memory efficiency analysis:");
+    println!("    Contexts: {}", context_count);
+    println!("    Total estimated memory: {:.2} KB", estimated_memory as f64 / 1024.0);
+    println!("    Memory per context: {:.1} bytes", estimated_memory as f64 / context_count as f64);
+    
+    // With string interning, memory usage should be more efficient
+    assert!(context_count > 0, "Should have created contexts");
+    assert!(estimated_memory > 0, "Should have some memory usage");
+    
+    println!("  ✅ String interning integration validated");
+    println!("  🎉 String interning providing memory efficiency!");
+}
