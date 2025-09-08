@@ -100,8 +100,8 @@ impl ContextNode {
 
         self.counts
             .keys()
-            .map(|state| {
-                let p = self.get_probability(state, config);
+            .map(|&state_id| {
+                let p = self.get_probability_by_id(state_id, config);
                 if p > 0.0 { -p * p.log2() } else { 0.0 }
             })
             .sum()
