@@ -134,11 +134,13 @@ impl ContextTree {
             total_bytes += context.len() * std::mem::size_of::<String>();
             total_bytes += context.iter().map(|s| s.capacity()).sum::<usize>();
 
-            // Node counts HashMap (using string representation for compatibility)
-            let string_counts = node.get_string_counts();
-            total_bytes += string_counts.len()
-                * (std::mem::size_of::<String>() + std::mem::size_of::<usize>());
-            total_bytes += string_counts.keys().map(|s| s.capacity()).sum::<usize>();
+            // Node counts using optimized TransitionCounts
+            // Estimate based on actual storage type (SmallVec vs HashMap)
+            total_bytes += node.get_state_counts().count() * 
+                (std::mem::size_of::<crate::string_interner::StateId>() + std::mem::size_of::<usize>());
+            
+            // Add overhead for the TransitionCounts enum itself
+            total_bytes += std::mem::size_of::<crate::transition_counts::TransitionCounts>();
 
             // Cached total_count (usize)
             total_bytes += std::mem::size_of::<usize>();
