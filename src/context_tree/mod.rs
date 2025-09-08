@@ -155,8 +155,41 @@ impl ContextNode {
             / (self.total_count as f64 + config.smoothing_alpha * vocab_size)
     }
 
-    /// Calculate Shannon entropy on-demand: H(X) = -∑ P(x) log₂ P(x)
-    pub fn calculate_entropy(&self, config: &AnomalyGridConfig) -> f64 {
+    /// Calculate Shannon entropy with lazy computation and caching: H(X) = -∑ P(x) log₂ P(x)
+    pub fn calculate_entropy(&mut self, config: &AnomalyGridConfig) -> f64 {
+        // Check if we have a valid cached value
+        if self.is_cache_valid(config) {
+            if let Some(cached_entropy) = self.cached_entropy {
+                return cached_entropy;
+            }
+        }
+
+        // Compute entropy
+        let entropy = if self.total_count == 0 {
+            0.0
+        } else {
+            self.counts
+                .keys()
+                .map(|state_id| {
+                    let p = self.get_probability_by_id(state_id, config);
+                    if p > 0.0 {
+                        -p * p.log2()
+                    } else {
+                        0.0
+                    }
+                })
+                .sum()
+        };
+
+        // Cache the result
+        self.cached_entropy = Some(entropy);
+        self.cached_config_hash = Some(Self::compute_config_hash(config));
+        
+        entropy
+    }
+
+    /// Calculate Shannon entropy without caching (for immutable access)
+    pub fn compute_entropy(&self, config: &AnomalyGridConfig) -> f64 {
         if self.total_count == 0 {
             return 0.0;
         }
