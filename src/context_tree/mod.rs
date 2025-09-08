@@ -16,14 +16,16 @@ use std::sync::Arc;
 
 /// A node in the context tree that stores transition statistics
 /// 
-/// MEMORY OPTIMIZATION: Only stores counts, computes probabilities on-demand
-/// to reduce memory usage by 30-40% per context node.
+/// Uses StateId for compact storage and computes probabilities on-demand
+/// to minimize memory.
 #[derive(Debug, Clone)]
 pub struct ContextNode {
-    /// Raw transition counts for each next state
-    pub counts: HashMap<String, usize>,
-    /// Cached total count for efficiency
+    /// Raw transition counts using interned state IDs for memory efficiency
+    counts: HashMap<StateId, usize>,
+    /// Cached total count to avoid recomputation
     total_count: usize,
+    /// String interner for converting between strings and StateIds
+    interner: Arc<StringInterner>,
 }
 
 impl ContextNode {
