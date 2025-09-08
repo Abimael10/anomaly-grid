@@ -171,6 +171,20 @@ impl ContextNode {
             })
             .collect()
     }
+
+    /// Reset the context node for reuse in memory pool
+    pub fn reset(&mut self, interner: Arc<StringInterner>) {
+        self.counts = TransitionCounts::new();
+        self.total_count = 0;
+        self.interner = interner;
+    }
+
+    /// Clear the context node data for memory pool return
+    pub fn clear(&mut self) {
+        self.counts = TransitionCounts::new();
+        self.total_count = 0;
+        // Keep the interner for potential reuse
+    }
 }
 
 impl Default for ContextNode {
