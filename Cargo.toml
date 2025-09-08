@@ -12,3 +12,4 @@ categories = ["science", "algorithms", "data-structures", "visualization", "math
 
 [dependencies]
 rayon = "1.10.0"
+smallvec = "1.13.0"
