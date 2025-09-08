@@ -78,8 +78,11 @@ impl ContextTree {
     /// to reduce memory usage while maintaining detection accuracy.
     pub fn prune_low_entropy_contexts(&mut self, min_entropy: f64) -> usize {
         let initial_count = self.contexts.len();
+        let config = crate::config::AnomalyGridConfig::default();
 
-        self.contexts.retain(|_, node| node.entropy >= min_entropy);
+        self.contexts.retain(|_, node| {
+            node.calculate_entropy(&config) >= min_entropy
+        });
 
         initial_count - self.contexts.len()
     }
@@ -121,6 +124,9 @@ impl ContextTree {
     }
 
     /// Estimate memory usage of the context tree
+    /// 
+    /// OPTIMIZED: Only counts actual stored data (counts + total_count)
+    /// No longer includes probabilities, entropy, or KL divergence storage
     pub fn estimate_memory_usage(&self) -> usize {
         let mut total_bytes = 0;
 
@@ -134,33 +140,28 @@ impl ContextTree {
                 node.counts.len() * (std::mem::size_of::<String>() + std::mem::size_of::<usize>());
             total_bytes += node.counts.keys().map(|s| s.capacity()).sum::<usize>();
 
-            // Node probabilities HashMap
-            total_bytes += node.probabilities.len()
-                * (std::mem::size_of::<String>() + std::mem::size_of::<f64>());
-            total_bytes += node
-                .probabilities
-                .keys()
-                .map(|s| s.capacity())
-                .sum::<usize>();
-
-            // Entropy and KL divergence
-            total_bytes += 2 * std::mem::size_of::<f64>();
+            // Cached total_count (usize)
+            total_bytes += std::mem::size_of::<usize>();
         }
 
         total_bytes
     }
 
     /// Get context statistics for analysis
+    /// 
+    /// OPTIMIZED: Computes entropy on-demand for statistics
     pub fn get_context_statistics(&self) -> ContextStatistics {
         let mut stats = ContextStatistics::new();
+        let config = crate::config::AnomalyGridConfig::default();
 
         for (context, node) in &self.contexts {
-            let total_count: usize = node.counts.values().sum();
+            let total_count = node.total_count();
             let unique_transitions = node.counts.len();
+            let entropy = node.calculate_entropy(&config);
 
             stats.total_contexts += 1;
             stats.total_transitions += total_count;
-            stats.total_entropy += node.entropy;
+            stats.total_entropy += entropy;
 
             if total_count < stats.min_frequency {
                 stats.min_frequency = total_count;
@@ -169,11 +170,11 @@ impl ContextTree {
                 stats.max_frequency = total_count;
             }
 
-            if node.entropy < stats.min_entropy {
-                stats.min_entropy = node.entropy;
+            if entropy < stats.min_entropy {
+                stats.min_entropy = entropy;
             }
-            if node.entropy > stats.max_entropy {
-                stats.max_entropy = node.entropy;
+            if entropy > stats.max_entropy {
+                stats.max_entropy = entropy;
             }
 
             stats
@@ -468,9 +469,7 @@ mod tests {
             for _ in 0..i {
                 node.add_transition("A".to_string());
             }
-            // Calculate probabilities to set entropy
-            let config = crate::config::AnomalyGridConfig::default();
-            node.calculate_probabilities(&config);
+            // No need to pre-calculate probabilities - computed on-demand
             tree.contexts.insert(vec![format!("X{}", i)], node);
         }
 
