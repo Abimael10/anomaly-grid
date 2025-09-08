@@ -29,17 +29,25 @@ pub struct ContextNode {
 }
 
 impl ContextNode {
-    /// Create a new empty context node
-    pub fn new() -> Self {
+    /// Create a new empty context node with string interner
+    pub fn new(interner: Arc<StringInterner>) -> Self {
         Self {
             counts: HashMap::new(),
             total_count: 0,
+            interner,
         }
     }
 
-    /// Add a transition to this context
-    pub fn add_transition(&mut self, next_state: String) {
-        *self.counts.entry(next_state).or_insert(0) += 1;
+    /// Add a transition to this context using string interning
+    pub fn add_transition(&mut self, next_state: &str) {
+        let state_id = self.interner.get_or_intern(next_state);
+        *self.counts.entry(state_id).or_insert(0) += 1;
+        self.total_count += 1;
+    }
+
+    /// Add a transition using StateId directly (internal use)
+    pub fn add_transition_by_id(&mut self, state_id: StateId) {
+        *self.counts.entry(state_id).or_insert(0) += 1;
         self.total_count += 1;
     }
 
@@ -50,12 +58,23 @@ impl ContextNode {
 
     /// Get the count for a specific next state
     pub fn get_count(&self, next_state: &str) -> usize {
-        self.counts.get(next_state).copied().unwrap_or(0)
+        let state_id = self.interner.get_or_intern(next_state);
+        self.counts.get(&state_id).copied().unwrap_or(0)
+    }
+
+    /// Get the count for a StateId directly (internal use)
+    pub fn get_count_by_id(&self, state_id: StateId) -> usize {
+        self.counts.get(&state_id).copied().unwrap_or(0)
     }
 
     /// Get the number of unique next states
     pub fn vocab_size(&self) -> usize {
         self.counts.len()
+    }
+
+    /// Get all state IDs with their counts (internal use)
+    pub fn get_state_counts(&self) -> &HashMap<StateId, usize> {
+        &self.counts
     }
 
     /// Get the probability for a specific next state using Laplace smoothing
