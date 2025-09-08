@@ -65,7 +65,7 @@ impl ContextTree {
         let initial_count = self.contexts.len();
 
         self.contexts.retain(|_, node| {
-            let total_transitions: usize = node.counts.values().sum();
+            let total_transitions = node.total_transitions();
             total_transitions >= min_count
         });
 
@@ -103,7 +103,7 @@ impl ContextTree {
             .contexts
             .iter()
             .map(|(context, node)| {
-                let freq: usize = node.counts.values().sum();
+                let freq = node.total_transitions();
                 (context.clone(), freq)
             })
             .collect();
@@ -135,10 +135,10 @@ impl ContextTree {
             total_bytes += context.len() * std::mem::size_of::<String>();
             total_bytes += context.iter().map(|s| s.capacity()).sum::<usize>();
 
-            // Node counts HashMap
-            total_bytes +=
-                node.counts.len() * (std::mem::size_of::<String>() + std::mem::size_of::<usize>());
-            total_bytes += node.counts.keys().map(|s| s.capacity()).sum::<usize>();
+            // Node counts HashMap (using string representation for compatibility)
+            let string_counts = node.get_string_counts();
+            total_bytes += string_counts.len() * (std::mem::size_of::<String>() + std::mem::size_of::<usize>());
+            total_bytes += string_counts.keys().map(|s| s.capacity()).sum::<usize>();
 
             // Cached total_count (usize)
             total_bytes += std::mem::size_of::<usize>();
@@ -156,7 +156,7 @@ impl ContextTree {
 
         for (context, node) in &self.contexts {
             let total_count = node.total_count();
-            let unique_transitions = node.counts.len();
+            let unique_transitions = node.vocab_size();
             let entropy = node.calculate_entropy(&config);
 
             stats.total_contexts += 1;
@@ -388,14 +388,14 @@ mod tests {
         let mut tree = ContextTree::new(2).expect("Failed to create tree");
 
         // Add some test contexts with different frequencies
-        let mut high_freq_node = ContextNode::new();
+        let mut high_freq_node = ContextNode::default();
         for _ in 0..10 {
-            high_freq_node.add_transition("A".to_string());
+            high_freq_node.add_transition("A");
         }
         tree.contexts.insert(vec!["X".to_string()], high_freq_node);
 
-        let mut low_freq_node = ContextNode::new();
-        low_freq_node.add_transition("B".to_string());
+        let mut low_freq_node = ContextNode::default();
+        low_freq_node.add_transition("B");
         tree.contexts.insert(vec!["Y".to_string()], low_freq_node);
 
         assert_eq!(tree.context_count(), 2);
@@ -412,9 +412,9 @@ mod tests {
         let mut tree = ContextTree::new(2).expect("Failed to create tree");
 
         // Add a test context
-        let mut node = ContextNode::new();
-        node.add_transition("A".to_string());
-        node.add_transition("B".to_string());
+        let mut node = ContextNode::default();
+        node.add_transition("A");
+        node.add_transition("B");
         tree.contexts.insert(vec!["X".to_string()], node);
 
         let memory_usage = tree.estimate_memory_usage();
@@ -426,13 +426,13 @@ mod tests {
         let mut tree = ContextTree::new(2).expect("Failed to create tree");
 
         // Add test contexts
-        let mut node1 = ContextNode::new();
-        node1.add_transition("A".to_string());
-        node1.add_transition("B".to_string());
+        let mut node1 = ContextNode::default();
+        node1.add_transition("A");
+        node1.add_transition("B");
         tree.contexts.insert(vec!["X".to_string()], node1);
 
-        let mut node2 = ContextNode::new();
-        node2.add_transition("C".to_string());
+        let mut node2 = ContextNode::default();
+        node2.add_transition("C");
         tree.contexts
             .insert(vec!["Y".to_string(), "Z".to_string()], node2);
 
@@ -465,9 +465,9 @@ mod tests {
         // Add test contexts with different frequencies
         for i in 1..=10 {
             // Start from 1 to ensure contexts have transitions
-            let mut node = ContextNode::new();
+            let mut node = ContextNode::default();
             for _ in 0..i {
-                node.add_transition("A".to_string());
+                node.add_transition("A");
             }
             // No need to pre-calculate probabilities - computed on-demand
             tree.contexts.insert(vec![format!("X{}", i)], node);
