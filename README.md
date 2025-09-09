@@ -6,7 +6,7 @@
     ██╔══██║██║╚██╗██║██║   ██║██║╚██╔╝██║██╔══██║██║    ╚██╔╝  
     ██║  ██║██║ ╚████║╚██████╔╝██║ ╚═╝ ██║██║  ██║███████╗██║   
     ╚═╝  ╚═╝╚═╝  ╚═══╝ ╚═════╝ ╚═╝     ╚═╝╚═╝  ╚═╝╚══════╝╚═╝   
-    [ANOMALY-GRID v0.2.1] - SEQUENCE ANOMALY DETECTION ENGINE
+    [ANOMALY-GRID v0.2.2] - SEQUENCE ANOMALY DETECTION ENGINE
 
 [![Crates.io](https://img.shields.io/crates/v/anomaly-grid.svg)](https://crates.io/crates/anomaly-grid)
 [![Documentation](https://docs.rs/anomaly-grid/badge.svg)](https://docs.rs/anomaly-grid)
@@ -56,7 +56,7 @@ A Rust library implementing variable-order Markov chains for sequence anomaly de
 
 ```toml
 [dependencies]
-anomaly-grid = "0.2.1"
+anomaly-grid = "0.2.2"
 ```
 
 ## Basic Usage
@@ -268,15 +268,13 @@ cargo run --example quick_start
 
 ## Version History
 
-### v0.2.1
-- **Memory Optimization Sprint**: Comprehensive memory efficiency improvements
-  - String interning for duplicate elimination
-  - Trie-based context storage with prefix sharing
-  - On-demand computation with lazy evaluation and caching
-  - Small collections optimization using SmallVec
-  - Memory pooling infrastructure
+### v0.2.2
+- String interning for duplicate elimination
+- Trie-based context storage with prefix sharing
+- On-demand computation with lazy evaluation and caching
+- Small collections optimization using SmallVec
+- Memory pooling infrastructure
 - **Enhanced Configuration**: Configurable smoothing, weights, and memory limits
-- **Performance Monitoring**: Comprehensive metrics and optimization tools
 - **Expanded Test Suite**: 72 tests with mathematical validation
 
 ### v0.2.0
