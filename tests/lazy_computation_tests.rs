@@ -86,8 +86,10 @@ fn test_cache_invalidation_on_data_change() {
 fn test_cache_invalidation_on_config_change() {
     let mut node = ContextNode::new(Arc::new(StringInterner::new()));
     let config1 = AnomalyGridConfig::default();
-    let mut config2 = AnomalyGridConfig::default();
-    config2.smoothing_alpha = 2.0; // Different smoothing parameter
+    let config2 = AnomalyGridConfig {
+        smoothing_alpha: 2.0,
+        ..Default::default()
+    };
     
     // Add transitions with unequal distribution to make smoothing effect more visible
     node.add_transition("A");
@@ -102,7 +104,7 @@ fn test_cache_invalidation_on_config_change() {
     
     // Compute with different config (should recompute)
     let entropy2 = node.calculate_entropy(&config2);
-    assert_ne!(entropy1, entropy2, "Entropy should be different with different smoothing: {:.6} vs {:.6}", entropy1, entropy2);
+    assert_ne!(entropy1, entropy2, "Entropy should be different with different smoothing: {entropy1:.6} vs {entropy2:.6}");
     
     // Compute with first config again (should recompute due to config change)
     let entropy3 = node.calculate_entropy(&config1);
@@ -212,11 +214,9 @@ fn test_mathematical_correctness_with_caching() {
     // Should be identical
     const TOLERANCE: f64 = 1e-15;
     assert!((entropy_cached - entropy_uncached).abs() < TOLERANCE, 
-           "Cached and uncached entropy should be identical: {:.15} vs {:.15}", 
-           entropy_cached, entropy_uncached);
+           "Cached and uncached entropy should be identical: {entropy_cached:.15} vs {entropy_uncached:.15}");
     assert!((kl_div_cached - kl_div_uncached).abs() < TOLERANCE,
-           "Cached and uncached KL divergence should be identical: {:.15} vs {:.15}",
-           kl_div_cached, kl_div_uncached);
+           "Cached and uncached KL divergence should be identical: {kl_div_cached:.15} vs {kl_div_uncached:.15}");
     
     // Verify mathematical properties
     assert!(entropy_cached >= 0.0, "Entropy must be non-negative");
@@ -231,8 +231,7 @@ fn test_mathematical_correctness_with_caching() {
     // Manual entropy calculation
     let expected_entropy = -p_a * p_a.log2() - p_b * p_b.log2();
     assert!((entropy_cached - expected_entropy).abs() < TOLERANCE,
-           "Entropy should match manual calculation: {:.15} vs {:.15}",
-           entropy_cached, expected_entropy);
+           "Entropy should match manual calculation: {entropy_cached:.15} vs {expected_entropy:.15}");
 }
 
 #[test]
@@ -263,5 +262,5 @@ fn test_cache_performance_characteristics() {
     assert!(first_duration.as_nanos() < 1_000_000, "First computation should complete quickly");
     assert!(second_duration.as_nanos() < 1_000_000, "Second computation should complete quickly");
     
-    println!("First computation: {:?}, Second computation: {:?}", first_duration, second_duration);
+    println!("First computation: {first_duration:?}, Second computation: {second_duration:?}");
 }
