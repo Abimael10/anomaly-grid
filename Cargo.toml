@@ -1,6 +1,6 @@
 [package]
 name = "anomaly-grid"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 authors = ["Juan Abimael Santos Castillo"]
 description = "Variable-order Markov model library for anomaly detection in finite-alphabet sequences with information-theoretic scoring."
