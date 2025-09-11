@@ -82,7 +82,7 @@ impl MarkovModel {
         if sequence.is_empty() {
             return 1.0; // Empty sequences have likelihood 1
         }
-        
+
         if sequence.len() == 1 {
             // Single-element sequences: return the marginal probability of that element
             return self.get_marginal_probability(&sequence[0]);
@@ -106,10 +106,12 @@ impl MarkovModel {
             for context_len in (1..=context.len().min(self.context_tree.max_order)).rev() {
                 let sub_context = &context[context.len() - context_len..];
 
-                if let Some(prob) = self
-                    .context_tree
-                    .get_transition_probability_normalized(sub_context, next_state, &self.config, &self.state_mapping)
-                {
+                if let Some(prob) = self.context_tree.get_transition_probability_normalized(
+                    sub_context,
+                    next_state,
+                    &self.config,
+                    &self.state_mapping,
+                ) {
                     // Check if this context has sufficient data for reliable estimation
                     if self.context_has_sufficient_data(sub_context) {
                         return prob;
@@ -176,10 +178,12 @@ impl MarkovModel {
         for context_len in (1..=max_context_len).rev() {
             let context = &sequence[position - context_len..position];
 
-            if let Some(prob) = self
-                .context_tree
-                .get_transition_probability_normalized(context, next_state, &self.config, &self.state_mapping)
-            {
+            if let Some(prob) = self.context_tree.get_transition_probability_normalized(
+                context,
+                next_state,
+                &self.config,
+                &self.state_mapping,
+            ) {
                 // Check if this context has sufficient data for reliable estimation
                 if self.context_has_sufficient_data(context) {
                     return prob;
@@ -197,13 +201,13 @@ impl MarkovModel {
         // Calculate minimum count threshold based on context length
         // Use more lenient thresholds to allow higher orders to work with reasonable data
         let min_count_threshold = match context.len() {
-            1 => 1,  // Order 1: need at least 1 observation
-            2 => 2,  // Order 2: need at least 2 observations  
-            3 => 3,  // Order 3: need at least 3 observations
-            4 => 4,  // Order 4: need at least 4 observations
-            _ => 5,  // Order 5+: need at least 5 observations
+            1 => 1, // Order 1: need at least 1 observation
+            2 => 2, // Order 2: need at least 2 observations
+            3 => 3, // Order 3: need at least 3 observations
+            4 => 4, // Order 4: need at least 4 observations
+            _ => 5, // Order 5+: need at least 5 observations
         };
-        
+
         // Check if context has sufficient total count
         if let Some(context_count) = self.context_tree.get_context_count(context) {
             context_count >= min_count_threshold
@@ -217,25 +221,25 @@ impl MarkovModel {
         // Calculate marginal probability by counting occurrences across all contexts
         let mut total_count = 0;
         let mut state_count = 0;
-        
+
         // Iterate through all contexts in the context tree
-        for (context_states, context_node) in self.context_tree.trie().iter_contexts() {
+        for (_context_states, context_node) in self.context_tree.trie().iter_contexts() {
             let context_total = context_node.total_count();
             total_count += context_total;
-            
+
             // Count occurrences of our target state in this context
             state_count += context_node.get_count(state);
         }
-        
+
         if total_count == 0 {
             return self.get_background_probability(state);
         }
-        
+
         // Apply smoothing
         let vocab_size = self.state_mapping.len() as f64;
         let smoothed_count = state_count as f64 + self.config.smoothing_alpha;
         let smoothed_total = total_count as f64 + self.config.smoothing_alpha * vocab_size;
-        
+
         (smoothed_count / smoothed_total).max(self.config.min_probability)
     }
 

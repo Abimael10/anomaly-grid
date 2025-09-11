@@ -13,8 +13,8 @@ use crate::context_trie::ContextTrie;
 use crate::error::{AnomalyGridError, AnomalyGridResult};
 use crate::string_interner::{StateId, StringInterner};
 use crate::transition_counts::TransitionCounts;
-use std::collections::HashMap;
 use std::collections::hash_map::DefaultHasher;
+use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
@@ -156,7 +156,12 @@ impl ContextNode {
     }
 
     /// Get probability with proper normalization using global vocabulary size
-    pub fn get_probability_normalized(&self, next_state: &str, config: &AnomalyGridConfig, global_vocab_size: usize) -> f64 {
+    pub fn get_probability_normalized(
+        &self,
+        next_state: &str,
+        config: &AnomalyGridConfig,
+        global_vocab_size: usize,
+    ) -> f64 {
         if self.total_count == 0 {
             return 1.0 / (global_vocab_size as f64).max(1.0);
         }
@@ -200,7 +205,7 @@ impl ContextNode {
         // Cache the result
         self.cached_entropy = Some(entropy);
         self.cached_config_hash = Some(Self::compute_config_hash(config));
-        
+
         entropy
     }
 
@@ -237,7 +242,7 @@ impl ContextNode {
             0.0
         } else {
             let uniform_prob = 1.0 / self.vocab_size() as f64;
-            
+
             self.counts
                 .keys()
                 .map(|state_id| {
@@ -254,7 +259,7 @@ impl ContextNode {
         // Cache the result
         self.cached_kl_divergence = Some(kl_divergence);
         self.cached_config_hash = Some(Self::compute_config_hash(config));
-        
+
         kl_divergence
     }
 
@@ -316,7 +321,10 @@ impl ContextNode {
 
     /// Get cache hit statistics for monitoring
     pub fn cache_stats(&self) -> (bool, bool) {
-        (self.cached_entropy.is_some(), self.cached_kl_divergence.is_some())
+        (
+            self.cached_entropy.is_some(),
+            self.cached_kl_divergence.is_some(),
+        )
     }
 }
 
@@ -441,7 +449,7 @@ impl ContextTree {
             .iter()
             .map(|s| self.interner.get_or_intern(s))
             .collect();
-        
+
         self.trie
             .get_context_data(&context_state_ids)
             .map(|node| node.get_probability(next_state, &AnomalyGridConfig::default()))
@@ -459,7 +467,7 @@ impl ContextTree {
             .iter()
             .map(|s| self.interner.get_or_intern(s))
             .collect();
-        
+
         self.trie
             .get_context_data(&context_state_ids)
             .map(|node| node.get_probability(next_state, config))
@@ -478,10 +486,10 @@ impl ContextTree {
             .iter()
             .map(|s| self.interner.get_or_intern(s))
             .collect();
-        
-        self.trie
-            .get_context_data(&context_state_ids)
-            .map(|node| node.get_probability_normalized(next_state, config, global_state_mapping.len()))
+
+        self.trie.get_context_data(&context_state_ids).map(|node| {
+            node.get_probability_normalized(next_state, config, global_state_mapping.len())
+        })
     }
 
     /// Get a context node for the given context
@@ -491,13 +499,14 @@ impl ContextTree {
             .iter()
             .map(|s| self.interner.get_or_intern(s))
             .collect();
-        
+
         self.trie.get_context_data(&context_state_ids)
     }
 
     /// Get the total count for a given context (for adaptive context selection)
     pub fn get_context_count(&self, context: &[String]) -> Option<usize> {
-        self.get_context_node(context).map(|node| node.total_count())
+        self.get_context_node(context)
+            .map(|node| node.total_count())
     }
 
     /// Get all contexts of a specific order
@@ -530,12 +539,12 @@ impl ContextTree {
     }
 
     /// Get all contexts as a HashMap for compatibility with existing code
-    /// 
+    ///
     /// Note: This creates a temporary HashMap and should be used sparingly
     /// for compatibility with existing tests and code that expects the old interface
     pub fn contexts(&self) -> HashMap<Vec<String>, ContextNode> {
         let mut contexts = HashMap::new();
-        
+
         for (state_ids, node) in self.trie.iter_contexts() {
             // Convert StateIds back to strings
             if let Some(strings) = state_ids
@@ -546,7 +555,7 @@ impl ContextTree {
                 contexts.insert(strings, node.clone());
             }
         }
-        
+
         contexts
     }
 

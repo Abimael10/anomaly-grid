@@ -61,7 +61,7 @@ impl ContextTree {
     ///
     /// This removes contexts that have been observed fewer than `min_count` times,
     /// which can significantly reduce memory usage for large alphabets.
-    /// 
+    ///
     /// Note: Currently disabled for trie-based storage - will be reimplemented
     pub fn prune_low_frequency_contexts(&mut self, _min_count: usize) -> usize {
         // TODO: Implement pruning for trie-based storage
@@ -72,7 +72,7 @@ impl ContextTree {
     ///
     /// This removes contexts where the entropy is below the threshold,
     /// indicating highly predictable transitions.
-    /// 
+    ///
     /// Note: Currently disabled for trie-based storage - will be reimplemented
     pub fn prune_low_entropy_contexts(&mut self, _min_entropy: f64) -> usize {
         // TODO: Implement entropy-based pruning for trie-based storage
@@ -83,7 +83,7 @@ impl ContextTree {
     ///
     /// This is useful for memory-constrained environments where you want to keep
     /// only the most important contexts.
-    /// 
+    ///
     /// Note: Currently disabled for trie-based storage - will be reimplemented
     pub fn limit_context_count(&mut self, _max_contexts: usize) -> usize {
         // TODO: Implement context limiting for trie-based storage
@@ -290,7 +290,6 @@ pub fn optimize_context_tree(
 mod tests {
     use super::*;
 
-
     #[test]
     fn test_performance_metrics() {
         let mut metrics = PerformanceMetrics::new();
@@ -308,26 +307,28 @@ mod tests {
     #[test]
     fn test_context_pruning() {
         let mut tree = ContextTree::new(2).expect("Failed to create tree");
-        
+
         // Build contexts using the proper API
         let config = crate::config::AnomalyGridConfig::default();
-        
+
         // Create high frequency sequence
         let high_freq_sequence: Vec<String> = std::iter::repeat_n("X".to_string(), 5)
             .chain(std::iter::repeat_n("A".to_string(), 10))
             .collect();
-        tree.build_from_sequence(&high_freq_sequence, &config).expect("Failed to build");
-        
-        // Create low frequency sequence  
+        tree.build_from_sequence(&high_freq_sequence, &config)
+            .expect("Failed to build");
+
+        // Create low frequency sequence
         let low_freq_sequence = vec!["Y".to_string(), "B".to_string()];
-        tree.build_from_sequence(&low_freq_sequence, &config).expect("Failed to build");
+        tree.build_from_sequence(&low_freq_sequence, &config)
+            .expect("Failed to build");
 
         let initial_count = tree.context_count();
         assert!(initial_count > 0);
 
         // Prune contexts with frequency < 5 (currently returns 0 as it's not implemented)
         let pruned = tree.prune_low_frequency_contexts(5);
-        
+
         // Since pruning is not implemented for trie storage, it returns 0
         assert_eq!(pruned, 0);
         assert_eq!(tree.context_count(), initial_count);
@@ -336,11 +337,12 @@ mod tests {
     #[test]
     fn test_memory_estimation() {
         let mut tree = ContextTree::new(2).expect("Failed to create tree");
-        
+
         // Build contexts using the proper API
         let config = crate::config::AnomalyGridConfig::default();
         let sequence = vec!["X".to_string(), "A".to_string(), "B".to_string()];
-        tree.build_from_sequence(&sequence, &config).expect("Failed to build");
+        tree.build_from_sequence(&sequence, &config)
+            .expect("Failed to build");
 
         let memory_usage = tree.estimate_memory_usage();
         assert!(memory_usage > 0);
@@ -349,16 +351,18 @@ mod tests {
     #[test]
     fn test_context_statistics() {
         let mut tree = ContextTree::new(2).expect("Failed to create tree");
-        
+
         // Build contexts using the proper API
         let config = crate::config::AnomalyGridConfig::default();
-        
+
         // Create sequences that will generate contexts of different orders
         let sequence1 = vec!["X".to_string(), "A".to_string(), "B".to_string()];
-        tree.build_from_sequence(&sequence1, &config).expect("Failed to build");
-        
+        tree.build_from_sequence(&sequence1, &config)
+            .expect("Failed to build");
+
         let sequence2 = vec!["Y".to_string(), "Z".to_string(), "C".to_string()];
-        tree.build_from_sequence(&sequence2, &config).expect("Failed to build");
+        tree.build_from_sequence(&sequence2, &config)
+            .expect("Failed to build");
 
         let stats = tree.get_context_statistics();
 
@@ -386,16 +390,15 @@ mod tests {
     #[test]
     fn test_optimize_context_tree() {
         let mut tree = ContextTree::new(2).expect("Failed to create tree");
-        
+
         // Build contexts using the proper API
         let config_build = crate::config::AnomalyGridConfig::default();
-        
+
         // Create sequences with different patterns to generate various contexts
         for i in 1..=5 {
-            let sequence: Vec<String> = (0..i+2)
-                .map(|j| format!("S{}", j % 3))
-                .collect();
-            tree.build_from_sequence(&sequence, &config_build).expect("Failed to build");
+            let sequence: Vec<String> = (0..i + 2).map(|j| format!("S{}", j % 3)).collect();
+            tree.build_from_sequence(&sequence, &config_build)
+                .expect("Failed to build");
         }
 
         let initial_count = tree.context_count();

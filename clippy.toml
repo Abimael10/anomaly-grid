@@ -1,0 +1,6 @@
+# Clippy configuration for anomaly-grid
+# Allow some less critical lints for test files
+
+# Allow uninlined format args in tests (they're more readable sometimes)
+# Allow useless vec! in tests (they're clearer for test data)
+# Allow manual range contains (sometimes more readable)

@@ -102,8 +102,8 @@ impl AnomalyScore {
             + info_component * config.information_weight;
 
         // Ensure the score is in [0,1] range with good discrimination
-        let normalized_score = raw_score.min(1.0).max(0.0);
-        
+        let normalized_score = raw_score.clamp(0.0, 1.0);
+
         // Apply a smooth transformation to improve discrimination
         // This ensures different likelihood/information combinations produce distinct scores
         let final_score = if normalized_score < 0.1 {
@@ -113,8 +113,8 @@ impl AnomalyScore {
         } else {
             0.29 + (normalized_score - 0.5) * 1.42 // Expand high scores
         };
-        
-        final_score.min(1.0).max(0.0)
+
+        final_score.clamp(0.0, 1.0)
     }
 }
 
@@ -167,7 +167,7 @@ impl AnomalyDetector {
         // Validate training data quality and provide warnings
         let warnings = crate::validation::validate_training_data_quality(sequence);
         for warning in warnings {
-            eprintln!("WARNING: {}", warning);
+            eprintln!("WARNING: {warning}");
         }
 
         let result = self.model.train(sequence);
@@ -197,7 +197,7 @@ impl AnomalyDetector {
     /// # Example
     /// ```rust
     /// use anomaly_grid::*;
-    /// 
+    ///
     /// let mut detector = AnomalyDetector::new(2)?;
     /// let sequences = vec![
     ///     vec!["A".to_string(), "B".to_string(), "C".to_string()],
@@ -237,8 +237,8 @@ impl AnomalyDetector {
             self.model.train(sequence).map_err(|e| {
                 AnomalyGridError::invalid_configuration(
                     "sequence_training",
-                    &format!("sequence {} failed", i),
-                    &format!("valid sequence: {}", e),
+                    &format!("sequence {i} failed"),
+                    &format!("valid sequence: {e}"),
                 )
             })?
         }
@@ -250,8 +250,6 @@ impl AnomalyDetector {
 
         Ok(())
     }
-
-
 
     /// Detect anomalies in a sequence using sliding window analysis
     ///
@@ -281,14 +279,14 @@ impl AnomalyDetector {
     /// # Example
     /// ```rust
     /// use anomaly_grid::*;
-    /// 
+    ///
     /// let mut detector = AnomalyDetector::new(2)?;
     /// detector.train(&["A".to_string(), "B".to_string(), "C".to_string()]);
-    /// 
+    ///
     /// let test_seq = vec!["X".to_string(), "Y".to_string(), "Z".to_string()];
     /// let strong_anomalies = detector.detect_anomalies(&test_seq, 0.8)?;
     /// let all_anomalies = detector.detect_anomalies(&test_seq, 0.0)?;
-    /// 
+    ///
     /// assert!(strong_anomalies.len() <= all_anomalies.len());
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
@@ -429,10 +427,10 @@ impl AnomalyDetector {
         }
 
         let mut anomalies = Vec::new();
-        
+
         // For short sequences, use the maximum possible window size
         let max_window_size = sequence.len().min(self.model.max_order() + 1);
-        
+
         // Start with the largest possible window and work down
         for window_size in (2..=max_window_size).rev() {
             if sequence.len() >= window_size {
@@ -449,7 +447,7 @@ impl AnomalyDetector {
                 }
             }
         }
-        
+
         // If no anomalies found with windowing, try the whole sequence
         if anomalies.is_empty() && sequence.len() >= 2 {
             if let Some(score) = self.calculate_anomaly_score_adaptive(sequence) {
@@ -458,7 +456,7 @@ impl AnomalyDetector {
                 }
             }
         }
-        
+
         // Special case: for sequences of exactly length 2, always try direct scoring
         if anomalies.is_empty() && sequence.len() == 2 {
             // Force scoring even if it didn't work above
@@ -489,7 +487,7 @@ impl AnomalyDetector {
 
         // Calculate information score with enhanced handling
         let information_score = self.calculate_information_score_enhanced(window);
-        
+
         Some(AnomalyScore::new_v2(
             window.to_vec(),
             likelihood,
@@ -502,22 +500,22 @@ impl AnomalyDetector {
     /// Calculate likelihood with fallback for completely unseen sequences
     fn calculate_likelihood_with_fallback(&self, sequence: &[String]) -> f64 {
         let base_likelihood = self.model.calculate_likelihood(sequence);
-        
+
         // If likelihood is zero or very small, use enhanced background probability estimation
         if base_likelihood <= self.model.config().min_probability {
             let mut fallback_likelihood = 1.0;
-            
+
             for i in 1..sequence.len() {
-                let context = if i > 0 { &sequence[i-1..i] } else { &[] };
+                let context = if i > 0 { &sequence[i - 1..i] } else { &[] };
                 let next_state = &sequence[i];
-                
+
                 // Try to get context probability first
                 let prob = if !context.is_empty() {
                     self.model.get_best_context_probability(context, next_state)
                 } else {
                     0.0
                 };
-                
+
                 // If context probability is zero, use background probability
                 let effective_prob = if prob > 0.0 {
                     prob
@@ -527,10 +525,10 @@ impl AnomalyDetector {
                     // Make unseen states more anomalous by using lower probability
                     background_prob * 0.1
                 };
-                
+
                 fallback_likelihood *= effective_prob;
             }
-            
+
             // Ensure minimum likelihood for scoring, but allow very small values for anomalies
             fallback_likelihood.max(self.model.config().min_probability * 0.001)
         } else {
@@ -559,9 +557,10 @@ impl AnomalyDetector {
                     break; // Use the first (longest) available context
                 }
             }
-            
+
             // If no context found, use background probability
-            if count == i - 1 { // No new count added for this position
+            if count == i - 1 {
+                // No new count added for this position
                 let background_prob = self.model.get_background_probability(&window[i]);
                 if background_prob > 0.0 {
                     total_information += -background_prob.log2();
@@ -655,5 +654,3 @@ pub fn batch_process_sequences(
 
     Ok(results)
 }
-
-
