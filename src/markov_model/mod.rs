@@ -79,8 +79,13 @@ impl MarkovModel {
 
     /// Calculate the likelihood of a sequence under the model
     pub fn calculate_likelihood(&self, sequence: &[String]) -> f64 {
-        if sequence.len() < 2 {
-            return 1.0; // Empty or single-element sequences have likelihood 1
+        if sequence.is_empty() {
+            return 1.0; // Empty sequences have likelihood 1
+        }
+        
+        if sequence.len() == 1 {
+            // Single-element sequences: return the marginal probability of that element
+            return self.get_marginal_probability(&sequence[0]);
         }
 
         let mut likelihood = 1.0;
@@ -93,21 +98,28 @@ impl MarkovModel {
         likelihood
     }
 
-    /// Get the best context probability using hierarchical context selection
+    /// Get the best context probability using adaptive hierarchical context selection
     pub fn get_best_context_probability(&self, context: &[String], next_state: &str) -> f64 {
-        // Try contexts from longest to shortest (hierarchical selection)
-        for context_len in (1..=context.len().min(self.context_tree.max_order)).rev() {
-            let sub_context = &context[context.len() - context_len..];
+        // Check if the state is in the global vocabulary
+        if self.state_mapping.contains_key(next_state) {
+            // For states in global vocabulary, use normalized probability
+            for context_len in (1..=context.len().min(self.context_tree.max_order)).rev() {
+                let sub_context = &context[context.len() - context_len..];
 
-            if let Some(prob) = self
-                .context_tree
-                .get_transition_probability(sub_context, next_state)
-            {
-                return prob;
+                if let Some(prob) = self
+                    .context_tree
+                    .get_transition_probability_normalized(sub_context, next_state, &self.config, &self.state_mapping)
+                {
+                    // Check if this context has sufficient data for reliable estimation
+                    if self.context_has_sufficient_data(sub_context) {
+                        return prob;
+                    }
+                    // If insufficient data, continue to shorter contexts
+                }
             }
         }
 
-        // Fallback to background probability for unseen transitions
+        // Fallback to background probability for unseen transitions or unknown states
         self.get_background_probability(next_state)
     }
 
@@ -150,7 +162,7 @@ impl MarkovModel {
         }
     }
 
-    /// Get probability for a specific position in a sequence
+    /// Get probability for a specific position in a sequence using adaptive context selection
     fn get_best_context_probability_for_position(
         &self,
         sequence: &[String],
@@ -159,15 +171,20 @@ impl MarkovModel {
         let next_state = &sequence[position];
         let max_context_len = position.min(self.context_tree.max_order);
 
-        // Try contexts from longest to shortest
+        // Adaptive context selection: try contexts from longest to shortest,
+        // but only use contexts with sufficient data
         for context_len in (1..=max_context_len).rev() {
             let context = &sequence[position - context_len..position];
 
             if let Some(prob) = self
                 .context_tree
-                .get_transition_probability(context, next_state)
+                .get_transition_probability_normalized(context, next_state, &self.config, &self.state_mapping)
             {
-                return prob;
+                // Check if this context has sufficient data for reliable estimation
+                if self.context_has_sufficient_data(context) {
+                    return prob;
+                }
+                // If insufficient data, continue to shorter contexts
             }
         }
 
@@ -175,15 +192,65 @@ impl MarkovModel {
         self.get_background_probability(next_state)
     }
 
-    /// Get background probability for unseen transitions
-    fn get_background_probability(&self, state: &str) -> f64 {
+    /// Check if a context has sufficient data for reliable probability estimation
+    fn context_has_sufficient_data(&self, context: &[String]) -> bool {
+        // Calculate minimum count threshold based on context length
+        // Use more lenient thresholds to allow higher orders to work with reasonable data
+        let min_count_threshold = match context.len() {
+            1 => 1,  // Order 1: need at least 1 observation
+            2 => 2,  // Order 2: need at least 2 observations  
+            3 => 3,  // Order 3: need at least 3 observations
+            4 => 4,  // Order 4: need at least 4 observations
+            _ => 5,  // Order 5+: need at least 5 observations
+        };
+        
+        // Check if context has sufficient total count
+        if let Some(context_count) = self.context_tree.get_context_count(context) {
+            context_count >= min_count_threshold
+        } else {
+            false // Context doesn't exist
+        }
+    }
+
+    /// Get marginal probability of a state from the training data
+    pub fn get_marginal_probability(&self, state: &str) -> f64 {
+        // Calculate marginal probability by counting occurrences across all contexts
+        let mut total_count = 0;
+        let mut state_count = 0;
+        
+        // Iterate through all contexts in the context tree
+        for (context_states, context_node) in self.context_tree.trie().iter_contexts() {
+            let context_total = context_node.total_count();
+            total_count += context_total;
+            
+            // Count occurrences of our target state in this context
+            state_count += context_node.get_count(state);
+        }
+        
+        if total_count == 0 {
+            return self.get_background_probability(state);
+        }
+        
+        // Apply smoothing
+        let vocab_size = self.state_mapping.len() as f64;
+        let smoothed_count = state_count as f64 + self.config.smoothing_alpha;
+        let smoothed_total = total_count as f64 + self.config.smoothing_alpha * vocab_size;
+        
+        (smoothed_count / smoothed_total).max(self.config.min_probability)
+    }
+
+    /// Get background probability for unseen transitions (public for adaptive scoring)
+    pub fn get_background_probability(&self, state: &str) -> f64 {
         // If state is known, use uniform probability over known states
         if self.state_mapping.contains_key(state) {
             let vocab_size = self.state_mapping.len() as f64;
             (1.0 / (vocab_size + 1.0)).max(self.config.min_probability)
         } else {
-            // For completely unknown states, use very small probability
-            self.config.min_probability
+            // For completely unknown states, use a reasonable small probability
+            // This ensures that unseen states can still be scored as anomalies
+            let vocab_size = self.state_mapping.len() as f64;
+            let unknown_state_prob = 1.0 / (vocab_size + 2.0); // +2 to account for unknown states
+            unknown_state_prob.max(self.config.min_probability)
         }
     }
 }

@@ -65,9 +65,10 @@ pub mod error;
 pub mod markov_model;
 pub mod performance;
 pub mod string_interner;
-pub mod memory_pool;
 pub mod transition_counts;
+pub mod memory_pool;
 pub mod context_trie;
+pub mod validation;
 
 // Re-export main types for convenience
 pub use anomaly_detector::{batch_process_sequences, AnomalyDetector, AnomalyScore};

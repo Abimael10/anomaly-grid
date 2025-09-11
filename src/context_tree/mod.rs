@@ -155,6 +155,22 @@ impl ContextNode {
             / (self.total_count as f64 + config.smoothing_alpha * vocab_size)
     }
 
+    /// Get probability with proper normalization using global vocabulary size
+    pub fn get_probability_normalized(&self, next_state: &str, config: &AnomalyGridConfig, global_vocab_size: usize) -> f64 {
+        if self.total_count == 0 {
+            return 1.0 / (global_vocab_size as f64).max(1.0);
+        }
+
+        let state_id = self.interner.get_or_intern(next_state);
+        let count = self.get_count_by_id(state_id) as f64;
+        let global_vocab_size_f64 = global_vocab_size as f64;
+
+        // Use global vocabulary size for proper normalization
+        // This ensures that probabilities for all states in the global vocabulary sum to 1
+        (count + config.smoothing_alpha)
+            / (self.total_count as f64 + config.smoothing_alpha * global_vocab_size_f64)
+    }
+
     /// Calculate Shannon entropy with lazy computation and caching: H(X) = -∑ P(x) log₂ P(x)
     pub fn calculate_entropy(&mut self, config: &AnomalyGridConfig) -> f64 {
         // Check if we have a valid cached value
@@ -449,6 +465,25 @@ impl ContextTree {
             .map(|node| node.get_probability(next_state, config))
     }
 
+    /// Get the transition probability with proper normalization using global vocabulary
+    pub fn get_transition_probability_normalized(
+        &self,
+        context: &[String],
+        next_state: &str,
+        config: &AnomalyGridConfig,
+        global_state_mapping: &std::collections::HashMap<String, usize>,
+    ) -> Option<f64> {
+        // Convert context to StateIds
+        let context_state_ids: Vec<StateId> = context
+            .iter()
+            .map(|s| self.interner.get_or_intern(s))
+            .collect();
+        
+        self.trie
+            .get_context_data(&context_state_ids)
+            .map(|node| node.get_probability_normalized(next_state, config, global_state_mapping.len()))
+    }
+
     /// Get a context node for the given context
     pub fn get_context_node(&self, context: &[String]) -> Option<&ContextNode> {
         // Convert context to StateIds
@@ -458,6 +493,11 @@ impl ContextTree {
             .collect();
         
         self.trie.get_context_data(&context_state_ids)
+    }
+
+    /// Get the total count for a given context (for adaptive context selection)
+    pub fn get_context_count(&self, context: &[String]) -> Option<usize> {
+        self.get_context_node(context).map(|node| node.total_count())
     }
 
     /// Get all contexts of a specific order
