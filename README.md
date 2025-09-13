@@ -71,17 +71,33 @@ let detector = AnomalyDetector::with_config(config)?;
 
 ## Use Cases
 
+### ✅ Excellent Fit
+- **Software Development Workflows**: Git command sequences, CI/CD pipeline analysis, code review patterns
+- **Database Query Optimization**: SQL operation sequences, transaction pattern analysis, N+1 query detection
+- **Network Protocol Analysis**: TCP/HTTP/TLS state transitions, protocol compliance verification, traffic flow analysis
+- **System Administration**: CLI command sequences, automation pattern detection, user proficiency analysis
+- **Creative Pattern Analysis**: Musical composition analysis, artistic workflow patterns, style classification
+- **Security Monitoring**: Login sequences, access patterns, behavioral anomaly detection
+- **IoT and Sensor Networks**: Device state transitions, sensor reading patterns, equipment health monitoring
+
 ### ✅ Good Fit
-- System logs with limited event types
-- Network protocols with small command sets  
-- User workflows with simple action sequences
-- IoT sensors with categorical states
+- **Business Process Mining**: Workflow step sequences, process compliance, bottleneck identification
+- **User Experience Analysis**: Click sequences, navigation patterns, conversion funnel analysis
+- **Manufacturing Quality Control**: Production step sequences, assembly line monitoring, defect pattern detection
+- **Financial Transaction Analysis**: Payment sequences, fraud pattern detection, risk assessment
+- **Healthcare Workflow Analysis**: Treatment sequences, care pathway optimization, protocol adherence
+
+### ⚠️ Requires Preprocessing
+- **Natural Language Processing**: Tokenize to categorical sequences (POS tags, named entities, semantic categories)
+- **Time Series Data**: Discretize continuous values into categorical states or trend patterns
+- **High-Resolution Sensor Data**: Aggregate into categorical states or pattern classifications
+- **Large Vocabularies**: Apply dimensionality reduction or clustering to create manageable alphabets
 
 ### ❌ Poor Fit
-- Natural language processing (large vocabulary)
-- High-resolution sensor data (continuous values)
-- Real-time processing (high-volume streams)
-- Large state spaces (many unique states)
+- **Raw Continuous Data**: Unprocessed sensor readings, audio waveforms, high-frequency financial data
+- **Extremely Large Alphabets**: >1000 unique states without preprocessing
+- **Real-Time Streaming**: Microsecond-latency requirements (though batch processing is efficient)
+- **Unstructured Data**: Images, videos, raw binary data without categorical interpretation
 
 ## Testing
 
@@ -124,4 +140,4 @@ MIT License - see [LICENSE](LICENSE) file.
 
 ---
 
-**Note**: This library is designed for categorical sequence analysis. For continuous data, consider preprocessing into discrete categories or using specialized time-series anomaly detection libraries.
+**Performance Note**: The library efficiently handles alphabets up to ~100 unique states with excellent memory usage (typically <100MB). For larger alphabets, consider preprocessing techniques like clustering, dimensionality reduction, or hierarchical categorization.
