@@ -9,11 +9,14 @@
     [ANOMALY-GRID v0.3.0] - SEQUENCE ANOMALY DETECTION ENGINE
 
 [![Crates.io](https://img.shields.io/crates/v/anomaly-grid.svg)](https://crates.io/crates/anomaly-grid)
+[![PyPI version](https://img.shields.io/pypi/v/anomaly-grid-py.svg)](https://pypi.org/project/anomaly-grid-py/)
 [![Documentation](https://docs.rs/anomaly-grid/badge.svg)](https://docs.rs/anomaly-grid)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Tests](https://img.shields.io/badge/tests-162%20passing-brightgreen.svg)](#testing)
 
 A Rust library implementing variable-order Markov chains for sequence anomaly detection in finite alphabets.
+
+To use a Python wrapper of this library implementations refer, to my other repository at: https://github.com/Abimael10/anomaly-grid-py
 
 ## Quick Start
 
