@@ -6,7 +6,7 @@
     ██╔══██║██║╚██╗██║██║   ██║██║╚██╔╝██║██╔══██║██║    ╚██╔╝  
     ██║  ██║██║ ╚████║╚██████╔╝██║ ╚═╝ ██║██║  ██║███████╗██║   
     ╚═╝  ╚═╝╚═╝  ╚═══╝ ╚═════╝ ╚═╝     ╚═╝╚═╝  ╚═╝╚══════╝╚═╝   
-    [ANOMALY-GRID v0.4.2] - SEQUENCE ANOMALY DETECTION ENGINE
+    [ANOMALY-GRID v0.4.3] - SEQUENCE ANOMALY DETECTION ENGINE
 
 [![Crates.io](https://img.shields.io/crates/v/anomaly-grid.svg)](https://crates.io/crates/anomaly-grid)
 [![Downloads](https://img.shields.io/crates/d/anomaly-grid.svg)](https://crates.io/crates/anomaly-grid)
@@ -19,7 +19,7 @@ A Rust library implementing variable-order Markov chains for sequence anomaly de
 
 ```toml
 [dependencies]
-anomaly-grid = "0.4.2"
+anomaly-grid = "0.4.3"
 ```
 
 ```rust
