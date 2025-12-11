@@ -6,7 +6,7 @@
     ██╔══██║██║╚██╗██║██║   ██║██║╚██╔╝██║██╔══██║██║    ╚██╔╝  
     ██║  ██║██║ ╚████║╚██████╔╝██║ ╚═╝ ██║██║  ██║███████╗██║   
     ╚═╝  ╚═╝╚═╝  ╚═══╝ ╚═════╝ ╚═╝     ╚═╝╚═╝  ╚═╝╚══════╝╚═╝   
-    [ANOMALY-GRID v0.4.0] - SEQUENCE ANOMALY DETECTION ENGINE
+    [ANOMALY-GRID v0.4.1] - SEQUENCE ANOMALY DETECTION ENGINE
 
 [![Crates.io](https://img.shields.io/crates/v/anomaly-grid.svg)](https://crates.io/crates/anomaly-grid)
 [![Downloads](https://img.shields.io/crates/d/anomaly-grid.svg)](https://crates.io/crates/anomaly-grid)
@@ -23,34 +23,50 @@ To use a Python wrapper of this library implementations refer, to my other repos
 
 ```toml
 [dependencies]
-anomaly-grid = "0.4.0"
+anomaly-grid = "0.4.1"
 ```
 
 ```rust
 use anomaly_grid::*;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Create detector
+    // Create detector (order-3)
     let mut detector = AnomalyDetector::new(3)?;
-    
-    // Train on normal patterns
-    let normal_sequence = vec!["A", "B", "C", "A", "B", "C"]
-        .iter().map(|s| s.to_string()).collect();
-    detector.train(&normal_sequence)?;
-    
-    // Detect anomalies
-    let test_sequence = vec!["A", "X", "Y"]
-        .iter().map(|s| s.to_string()).collect();
-    let anomalies = detector.detect_anomalies(&test_sequence, 0.1)?;
-    
-    for anomaly in anomalies {
-        println!("Anomaly: {:?}, Strength: {:.3}", 
-                 anomaly.sequence, anomaly.anomaly_strength);
+
+    // Train on a richer pattern set: repeating ABC blocks plus a few benign variants
+    let mut normal_sequence = Vec::new();
+    for _ in 0..30 {
+        normal_sequence.extend(["A", "B", "C", "A", "B", "C", "A", "B", "C"].iter().cloned());
     }
-    
+    normal_sequence.extend(["A", "B", "A", "C", "A", "B", "C"].iter().cloned());
+    normal_sequence.extend(["A", "C", "B", "A", "B", "C"].iter().cloned());
+    let normal_sequence = normal_sequence
+        .into_iter()
+        .map(|s| s.to_string())
+        .collect::<Vec<_>>();
+    detector.train(&normal_sequence)?;
+
+    // Detect deviations
+    let test_sequence = ["A", "B", "C", "X", "Y", "C", "A", "B", "C"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect::<Vec<_>>();
+    let anomalies = detector.detect_anomalies(&test_sequence, 0.2)?;
+
+    for anomaly in anomalies {
+        println!(
+            "Anomaly window {:?}, Strength: {:.3}",
+            anomaly.sequence, anomaly.anomaly_strength
+        );
+    }
+
     Ok(())
 }
 ```
+
+Expected output with the above data:
+- Two anomaly windows flagged: `["B","C","X","Y"]` (strength ~0.27) and `["C","X","Y","C"]` (strength ~0.39).
+- No other windows reported; the rest of the test sequence matches the trained ABC pattern.
 
 ## What This Library Does
 
@@ -58,8 +74,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 - **Adaptive Context Selection**: Uses longest available context with sufficient data, falls back to shorter contexts automatically
 - **Information-Theoretic Scoring**: Shannon entropy and KL divergence calculations with lazy computation and caching
 - **Memory-Optimized Storage**: String interning, trie-based context storage with prefix sharing, and SmallVec for efficient small collections
-- **Parallel Batch Processing**: Processes multiple sequences concurrently using Rayon for improved throughput
-- **Comprehensive Testing**: Extensive unit, integration, domain, and performance validation with mathematical correctness verification
+- **Parallel Batch Processing**: Processes multiple sequences concurrently using Rayon
+- **Comprehensive Testing**: Extensive unit, integration, domain, and performance validation
 
 ## Configuration
 
@@ -68,7 +84,7 @@ let config = AnomalyGridConfig::default()
     .with_max_order(4)?                    // Higher order = more memory, better accuracy
     .with_smoothing_alpha(0.5)?            // Lower = more sensitive to training data
     .with_weights(0.8, 0.2)?               // Likelihood vs information weight
-    .with_memory_limit(100 * 1024 * 1024); // 100MB memory limit
+    .with_memory_limit(Some(100 * 1024 * 1024))?; // 100MB memory limit
 
 let detector = AnomalyDetector::with_config(config)?;
 ```
@@ -116,32 +132,21 @@ cargo test domain_         # Domain tests
 cargo test performance_    # Performance tests (run with --release for perf thresholds)
 
 # Run examples
-cargo run --example quick_start
-cargo run --example network_security_monitoring
-cargo run --example financial_fraud_detection
+cargo run --example communication_protocol_analysis
+cargo run --example network_protocol_analysis
+cargo run --example protein_folding_sequences
+cargo run --example docs_validation
 ```
 
 ## Documentation
 
 - **[Complete Documentation](docs/)** - Comprehensive guides and API reference
 - **[API Reference](https://docs.rs/anomaly-grid)** - Online API documentation
-- **[Examples](examples/)** - Production-ready examples with validation
+- **[Examples](examples/)**
 - **[Changelog](CHANGELOG.md)** - Version history and changes
-
-## Dependencies
-
-```toml
-[dependencies]
-rayon = "1.10.0"    # Parallel batch processing
-smallvec = "1.13.0" # Memory-efficient small collections
-```
-
-Minimal dependencies for core functionality and memory optimization.
 
 ## License
 
 MIT License - see [LICENSE](LICENSE) file.
 
 ---
-
-**Performance Note**: The library efficiently handles alphabets up to ~100 unique states with excellent memory usage (typically <100MB). For larger alphabets, consider preprocessing techniques like clustering, dimensionality reduction, or hierarchical categorization.

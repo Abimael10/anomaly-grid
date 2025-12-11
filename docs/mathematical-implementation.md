@@ -1,12 +1,12 @@
 # Mathematical Implementation
 
-Detailed mathematical foundations of the Anomaly Grid library.
+How the variable-order Markov model computes probabilities and anomaly scores for finite alphabets.
 
 ## Core Algorithm
 
 ### Variable-Order Markov Chains
 
-The library implements variable-order Markov chains where the order can range from 1 to `max_order`.
+Order ranges from 1 to `max_order`, with a fallback from longer to shorter contexts.
 
 #### State Transition Probability
 
@@ -24,12 +24,10 @@ Where:
 
 #### Hierarchical Context Selection
 
-The algorithm uses a hierarchical fallback strategy:
-
+Fallback strategy:
 1. Try context of length `max_order`
-2. If no transitions found, try `max_order - 1`
-3. Continue until context of length 1
-4. If still no match, use uniform probability: `1 / |vocabulary|`
+2. If none, try shorter contexts down to length 1
+3. If still none, use uniform probability `1 / |vocabulary|`
 
 ### Information Theory
 
@@ -67,29 +65,9 @@ For a sequence S = [s₁, s₂, ..., sₙ]:
 log_likelihood = ∑ log P(sᵢ | context_i)
 ```
 
-#### Normalized Likelihood
-
-```
-likelihood = exp(log_likelihood)
-```
-
-Note: Clamped to [0, 1] range for numerical stability.
-
 #### Anomaly Strength
 
-The final anomaly strength combines likelihood and information components:
-
-```
-combined_score = (log_likelihood_component × likelihood_weight + 
-                 info_score × information_weight) / normalization_factor
-
-anomaly_strength = tanh(combined_score)
-```
-
-Default weights:
-- `likelihood_weight = 0.7`
-- `information_weight = 0.3`
-- `normalization_factor = 10.0`
+The implementation combines a surprise term (−ln(likelihood) scaled to [0,1]) and an information term (information_score scaled to [0,1]) using the configured weights. The weighted score is then passed through a calibrated, piecewise scaling to keep values in [0,1] and accentuate higher-risk windows. Default weights: likelihood_weight = 0.7, information_weight = 0.3.
 
 ## Memory Optimization
 
@@ -144,10 +122,7 @@ fn estimate_memory_usage(contexts: usize, avg_context_length: usize) -> usize {
 
 ### Probability Bounds
 
-All probabilities are maintained in the range [0, 1] with special handling for:
-- Zero probabilities (smoothing)
-- Underflow protection (minimum probability thresholds)
-- Overflow protection (log-space calculations)
+Probabilities are kept in [0, 1] with smoothing to avoid zeros and log-space math to avoid underflow.
 
 ### Smoothing Strategies
 
@@ -164,35 +139,9 @@ Configurable α parameter allows for different smoothing strengths:
 
 ### Numerical Stability
 
-#### Log-Space Calculations
-Likelihood calculations use log-space to prevent underflow:
-```rust
-log_likelihood += log_probability;
-likelihood = exp(log_likelihood.clamp(MIN_LOG_PROB, 0.0));
-```
-
-#### Clamping and Bounds
-- Probabilities clamped to [MIN_PROB, 1.0]
-- Log probabilities clamped to [MIN_LOG_PROB, 0.0]
-- Anomaly strengths normalized to [0, 1] using tanh
+- Likelihood calculations use log-space with clamping for underflow/overflow protection.
+- Anomaly strengths are kept in [0, 1] using a calibrated piecewise scaling of the weighted score.
 
 ## Validation and Testing
 
-### Mathematical Properties Verified
-
-1. **Probability Conservation**: ∑ P(s | context) = 1 for all contexts
-2. **Monotonicity**: Higher thresholds detect fewer anomalies
-3. **Consistency**: Same input produces same output
-4. **Bounds**: All scores within expected ranges
-5. **Convergence**: Training converges to stable state
-
-### Domain Testing
-
-The library includes comprehensive domain testing covering:
-- Markov chain mathematics
-- Probability theory
-- Information theory
-- Anomaly detection logic
-- Sequence analysis
-
-Each domain has dedicated tests validating mathematical correctness and edge cases.
+Tests cover probability conservation (∑P=1), threshold monotonicity, consistent outputs, and score bounds; domain tests exercise Markov math, information measures, detection logic, and sequence analysis.

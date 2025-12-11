@@ -3,7 +3,21 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.4.0] - 2025-03-10
+## [0.4.1] - 2025-12-11
+
+### Added
+- Consolidated docs and examples for real-world scenarios (protocol, protein, communication) with count-based reporting.
+- Added missing API doc reference, it now cover `train_sequences`, `ContextTree`/`ContextStatistics`, validation helpers, and optimization helpers.
+
+### Changed
+- Updated configuration snippets to match current API (`with_memory_limit(Some(..))?`), and refreshed Quick Start to use richer training data.
+- Simplified wording in docs and examples to avoid jargon; removed outdated examples in favor of focused finite-alphabet use cases.
+
+### Fixed
+- Documentation references now align with code (correct config signatures, `OptimizationConfig` fields, `PerformanceMetrics` fields, anomaly strength description).
+- Note in docs about detection timing requiring `detect_anomalies_with_monitoring`.
+
+## [0.4.0] - 2025-12-11
 
 ### Added
 - Regression coverage for vocab preservation, marginal stability, and longest-context information scoring

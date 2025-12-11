@@ -1,12 +1,12 @@
-# Anomaly Grid Documentation
+# Documentation
 
-This directory contains comprehensive documentation for the Anomaly Grid library.
+This directory contains documentation for Anomaly Grid.
 
 ## Documentation Structure
 
-- **[API Reference](api-reference.md)** - Complete API documentation with examples
-- **[Mathematical Implementation](mathematical-implementation.md)** - Detailed mathematical foundations
-- **[Performance Guide](performance-guide.md)** - Performance characteristics, optimization tips, and profiling notes
+- **[API Reference](api-reference.md)** - Public API with examples
+- **[Mathematical Implementation](mathematical-implementation.md)** - Model math
+- **[Performance Guide](performance-guide.md)** - Performance and optimization notes
 
 ## Quick Links
 

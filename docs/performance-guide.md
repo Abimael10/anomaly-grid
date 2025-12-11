@@ -26,7 +26,7 @@ let detector = AnomalyDetector::new(4)?;
 ```rust
 let config = AnomalyGridConfig::default()
     .with_max_order(3)?
-    .with_memory_limit(100 * 1024 * 1024); // 100MB limit
+    .with_memory_limit(Some(100 * 1024 * 1024))?; // 100MB limit
 
 let detector = AnomalyDetector::with_config(config)?;
 ```
@@ -47,11 +47,11 @@ let config = AnomalyGridConfig::default()
 
 ```rust
 let opt_config = OptimizationConfig {
-    prune_low_frequency_contexts: true,
-    frequency_threshold: 5,
-    prune_low_entropy_contexts: true,
-    entropy_threshold: 0.1,
-    enable_memory_pooling: true,
+    enable_pruning: true,
+    min_context_count: 5,
+    min_entropy: 0.1,
+    max_contexts: None,
+    enable_monitoring: true,
 };
 
 detector.optimize(&opt_config)?;
@@ -61,11 +61,7 @@ detector.optimize(&opt_config)?;
 
 ```rust
 // Process multiple sequences in parallel
-let results = AnomalyDetector::batch_process_sequences(
-    &sequences,
-    &config,
-    threshold
-)?;
+let results = AnomalyDetector::batch_process_sequences(&sequences, &config, threshold)?;
 ```
 
 ## Performance Monitoring
@@ -78,6 +74,7 @@ println!("Training time: {} ms", metrics.training_time_ms);
 println!("Detection time: {} ms", metrics.detection_time_ms);
 println!("Context count: {}", metrics.context_count);
 println!("Memory usage: {} KB", metrics.estimated_memory_bytes / 1024);
+// detection_time_ms is populated when using detect_anomalies_with_monitoring
 ```
 
 ### Custom Benchmarking
@@ -132,9 +129,11 @@ Remove infrequently used contexts:
 
 ```rust
 let opt_config = OptimizationConfig {
-    prune_low_frequency_contexts: true,
-    frequency_threshold: 3, // Remove contexts seen < 3 times
-    ..Default::default()
+    enable_pruning: true,
+    min_context_count: 3, // Remove contexts seen < 3 times
+    min_entropy: 0.0,
+    max_contexts: None,
+    enable_monitoring: true,
 };
 ```
 
@@ -144,9 +143,11 @@ Remove low-information contexts:
 
 ```rust
 let opt_config = OptimizationConfig {
-    prune_low_entropy_contexts: true,
-    entropy_threshold: 0.5, // Remove low-entropy contexts
-    ..Default::default()
+    enable_pruning: true,
+    min_context_count: 1,
+    min_entropy: 0.5, // Remove low-entropy contexts
+    max_contexts: None,
+    enable_monitoring: true,
 };
 ```
 
@@ -183,7 +184,7 @@ let results = AnomalyDetector::batch_process_sequences(&sequences, &config, 0.1)
 let config = AnomalyGridConfig::default()
     .with_max_order(5)?
     .with_smoothing_alpha(0.1)?
-    .with_memory_limit(500 * 1024 * 1024); // 500MB
+    .with_memory_limit(Some(500 * 1024 * 1024))?; // 500MB
 ```
 
 ### For Memory-Constrained Environments
@@ -196,14 +197,14 @@ let config = AnomalyGridConfig::default()
 ```rust
 let config = AnomalyGridConfig::default()
     .with_max_order(2)?
-    .with_memory_limit(50 * 1024 * 1024); // 50MB limit
+    .with_memory_limit(Some(50 * 1024 * 1024))?; // 50MB limit
 
 let opt_config = OptimizationConfig {
-    prune_low_frequency_contexts: true,
-    frequency_threshold: 10,
-    prune_low_entropy_contexts: true,
-    entropy_threshold: 1.0,
-    enable_memory_pooling: true,
+    enable_pruning: true,
+    min_context_count: 10,
+    min_entropy: 1.0,
+    max_contexts: Some(20_000),
+    enable_monitoring: true,
 };
 ```
 
