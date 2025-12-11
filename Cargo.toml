@@ -14,7 +14,13 @@ keywords = [
     "log-analysis",
 ]
 readme = "README.md"
-categories = ["markov-chains","algorithms","data-structures","time-series","mathematics"]
+categories = [
+    "science",
+    "algorithms",
+    "data-structures",
+    "mathematics",
+    "visualization",
+]
 
 [dependencies]
 rayon = "1.10.0"
