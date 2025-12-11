@@ -15,8 +15,6 @@
 
 A Rust library implementing variable-order Markov chains for sequence anomaly detection in finite alphabets.
 
-To use a Python wrapper of this library implementations refer, to my other repository at: https://github.com/Abimael10/anomaly-grid-py
-
 ## Quick Start
 
 ```toml
