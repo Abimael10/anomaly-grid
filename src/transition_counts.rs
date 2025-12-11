@@ -90,7 +90,7 @@ impl TransitionCounts {
     }
 
     /// Iterate over all (state_id, count) pairs
-    pub fn iter(&self) -> TransitionCountsIter {
+    pub fn iter(&self) -> TransitionCountsIter<'_> {
         match self {
             Self::Small(vec) => TransitionCountsIter::Small(vec.iter()),
             Self::Large(map) => TransitionCountsIter::Large(map.iter()),

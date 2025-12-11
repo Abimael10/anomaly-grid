@@ -6,12 +6,7 @@ This directory contains comprehensive documentation for the Anomaly Grid library
 
 - **[API Reference](api-reference.md)** - Complete API documentation with examples
 - **[Mathematical Implementation](mathematical-implementation.md)** - Detailed mathematical foundations
-- **[Performance Guide](performance-guide.md)** - Performance characteristics and optimization
-- **[Configuration Guide](configuration-guide.md)** - Configuration options and best practices
-- **[Examples Guide](examples-guide.md)** - Detailed examples and use cases
-- **[Testing Guide](testing-guide.md)** - Testing framework and validation approach
-- **[Migration Guide](migration-guide.md)** - Migration between versions
-- **[Troubleshooting](troubleshooting.md)** - Common issues and solutions
+- **[Performance Guide](performance-guide.md)** - Performance characteristics, optimization tips, and profiling notes
 
 ## Quick Links
 

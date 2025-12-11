@@ -5,7 +5,8 @@
 
 use crate::context_tree::ContextTree;
 use crate::error::AnomalyGridResult;
-use std::collections::HashMap;
+use crate::string_interner::StateId;
+use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
 /// Simple performance metrics for monitoring
@@ -61,11 +62,12 @@ impl ContextTree {
     ///
     /// This removes contexts that have been observed fewer than `min_count` times,
     /// which can significantly reduce memory usage for large alphabets.
-    ///
-    /// Note: Currently disabled for trie-based storage - will be reimplemented
-    pub fn prune_low_frequency_contexts(&mut self, _min_count: usize) -> usize {
-        // TODO: Implement pruning for trie-based storage
-        0
+    pub fn prune_low_frequency_contexts(&mut self, min_count: usize) -> usize {
+        if min_count == 0 {
+            return 0;
+        }
+
+        self.rebuild_filtered(|_, node| node.total_count() >= min_count)
     }
 
     /// Remove contexts with low entropy (deterministic contexts)
@@ -73,10 +75,14 @@ impl ContextTree {
     /// This removes contexts where the entropy is below the threshold,
     /// indicating highly predictable transitions.
     ///
-    /// Note: Currently disabled for trie-based storage - will be reimplemented
-    pub fn prune_low_entropy_contexts(&mut self, _min_entropy: f64) -> usize {
-        // TODO: Implement entropy-based pruning for trie-based storage
-        0
+    /// Entropy is computed using the last configuration used during training.
+    pub fn prune_low_entropy_contexts(&mut self, min_entropy: f64) -> usize {
+        if min_entropy <= 0.0 {
+            return 0;
+        }
+
+        let cfg = self.last_config.clone();
+        self.rebuild_filtered(|_, node| node.compute_entropy(&cfg) >= min_entropy)
     }
 
     /// Keep only the most frequent contexts up to a maximum count
@@ -84,10 +90,33 @@ impl ContextTree {
     /// This is useful for memory-constrained environments where you want to keep
     /// only the most important contexts.
     ///
-    /// Note: Currently disabled for trie-based storage - will be reimplemented
-    pub fn limit_context_count(&mut self, _max_contexts: usize) -> usize {
-        // TODO: Implement context limiting for trie-based storage
-        0
+    /// Returns the number of contexts removed.
+    pub fn limit_context_count(&mut self, max_contexts: usize) -> usize {
+        if max_contexts == 0 {
+            return 0;
+        }
+
+        let original_count = self.trie().context_count();
+        if original_count <= max_contexts {
+            return 0;
+        }
+
+        // Collect contexts with their frequencies
+        let mut contexts: Vec<(Vec<StateId>, usize)> = self
+            .trie()
+            .iter_contexts()
+            .map(|(state_ids, node)| (state_ids, node.total_count()))
+            .collect();
+
+        // Keep the most frequent contexts
+        contexts.sort_by(|a, b| b.1.cmp(&a.1));
+        let keep: HashSet<Vec<StateId>> = contexts
+            .into_iter()
+            .take(max_contexts)
+            .map(|(ids, _)| ids)
+            .collect();
+
+        self.rebuild_filtered(|state_ids, _| keep.contains(state_ids))
     }
 
     /// Estimate memory usage of the context tree
@@ -326,12 +355,11 @@ mod tests {
         let initial_count = tree.context_count();
         assert!(initial_count > 0);
 
-        // Prune contexts with frequency < 5 (currently returns 0 as it's not implemented)
+        // Prune contexts with frequency < 5
         let pruned = tree.prune_low_frequency_contexts(5);
 
-        // Since pruning is not implemented for trie storage, it returns 0
-        assert_eq!(pruned, 0);
-        assert_eq!(tree.context_count(), initial_count);
+        assert!(pruned > 0);
+        assert!(tree.context_count() < initial_count);
     }
 
     #[test]
@@ -415,8 +443,7 @@ mod tests {
 
         let metrics = optimize_context_tree(&mut tree, &config).expect("Failed to optimize");
 
-        // Since pruning is not implemented for trie storage, context count should remain the same
-        assert_eq!(tree.context_count(), initial_count);
+        assert!(tree.context_count() <= initial_count);
         assert_eq!(metrics.context_count, tree.context_count());
         assert!(tree.context_count() > 0);
         assert!(metrics.estimated_memory_bytes > 0);

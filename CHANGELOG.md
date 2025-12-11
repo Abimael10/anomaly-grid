@@ -3,6 +3,25 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2025-03-10
+
+### Added
+- Regression coverage for vocab preservation, marginal stability, and longest-context information scoring
+- ID-based detection fast path with shared state interner caching for lower overhead
+- Context pruning/limiting implementations for frequency, entropy, and top-N retention with trie rebuilds
+
+### Changed
+- Vocabulary building now spans multi-sequence training without dropping earlier states
+- Information scoring and fallback likelihoods walk contexts longest-to-shortest to honor variable-order modeling
+- Marginals derive from raw counts independent of `max_order`; normalized probabilities honor training config
+- Batch and uniform-sequence detection paths optimized for stability and throughput; detection uses thread-local ID buffers to avoid contention
+- Batch performance tests stabilized with deterministic workloads and warm-ups to reduce variance
+
+### Fixed
+- Context probability queries respect last-used config instead of default smoothing
+- Adaptive likelihood fallback uses hierarchical contexts instead of single-step backgrounds
+- Release perf tests stabilized (throughput/latency/scalability) without relaxing thresholds
+
 ## [0.3.0] - 2025-09-11
 
 ### Added

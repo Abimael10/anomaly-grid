@@ -6,13 +6,14 @@
     ██╔══██║██║╚██╗██║██║   ██║██║╚██╔╝██║██╔══██║██║    ╚██╔╝  
     ██║  ██║██║ ╚████║╚██████╔╝██║ ╚═╝ ██║██║  ██║███████╗██║   
     ╚═╝  ╚═╝╚═╝  ╚═══╝ ╚═════╝ ╚═╝     ╚═╝╚═╝  ╚═╝╚══════╝╚═╝   
-    [ANOMALY-GRID v0.3.0] - SEQUENCE ANOMALY DETECTION ENGINE
+    [ANOMALY-GRID v0.4.0] - SEQUENCE ANOMALY DETECTION ENGINE
 
 [![Crates.io](https://img.shields.io/crates/v/anomaly-grid.svg)](https://crates.io/crates/anomaly-grid)
+[![Downloads](https://img.shields.io/crates/d/anomaly-grid.svg)](https://crates.io/crates/anomaly-grid)
 [![PyPI version](https://img.shields.io/pypi/v/anomaly-grid-py.svg)](https://pypi.org/project/anomaly-grid-py/)
 [![Documentation](https://docs.rs/anomaly-grid/badge.svg)](https://docs.rs/anomaly-grid)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests](https://img.shields.io/badge/tests-162%20passing-brightgreen.svg)](#testing)
+[![Tests](https://img.shields.io/badge/tests-passing-brightgreen.svg)](#testing)
 
 A Rust library implementing variable-order Markov chains for sequence anomaly detection in finite alphabets.
 
@@ -22,7 +23,7 @@ To use a Python wrapper of this library implementations refer, to my other repos
 
 ```toml
 [dependencies]
-anomaly-grid = "0.3.0"
+anomaly-grid = "0.4.0"
 ```
 
 ```rust
@@ -58,7 +59,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 - **Information-Theoretic Scoring**: Shannon entropy and KL divergence calculations with lazy computation and caching
 - **Memory-Optimized Storage**: String interning, trie-based context storage with prefix sharing, and SmallVec for efficient small collections
 - **Parallel Batch Processing**: Processes multiple sequences concurrently using Rayon for improved throughput
-- **Comprehensive Testing**: 162 tests covering unit, integration, domain, and performance validation with mathematical correctness verification
+- **Comprehensive Testing**: Extensive unit, integration, domain, and performance validation with mathematical correctness verification
 
 ## Configuration
 
@@ -74,7 +75,7 @@ let detector = AnomalyDetector::with_config(config)?;
 
 ## Use Cases
 
-### ✅ Excellent Fit
+### Excellent Fit
 - **Software Development Workflows**: Git command sequences, CI/CD pipeline analysis, code review patterns
 - **Database Query Optimization**: SQL operation sequences, transaction pattern analysis, N+1 query detection
 - **Network Protocol Analysis**: TCP/HTTP/TLS state transitions, protocol compliance verification, traffic flow analysis
@@ -83,20 +84,20 @@ let detector = AnomalyDetector::with_config(config)?;
 - **Security Monitoring**: Login sequences, access patterns, behavioral anomaly detection
 - **IoT and Sensor Networks**: Device state transitions, sensor reading patterns, equipment health monitoring
 
-### ✅ Good Fit
+### Good Fit
 - **Business Process Mining**: Workflow step sequences, process compliance, bottleneck identification
 - **User Experience Analysis**: Click sequences, navigation patterns, conversion funnel analysis
 - **Manufacturing Quality Control**: Production step sequences, assembly line monitoring, defect pattern detection
 - **Financial Transaction Analysis**: Payment sequences, fraud pattern detection, risk assessment
 - **Healthcare Workflow Analysis**: Treatment sequences, care pathway optimization, protocol adherence
 
-### ⚠️ Requires Preprocessing
+### Requires Preprocessing
 - **Natural Language Processing**: Tokenize to categorical sequences (POS tags, named entities, semantic categories)
 - **Time Series Data**: Discretize continuous values into categorical states or trend patterns
 - **High-Resolution Sensor Data**: Aggregate into categorical states or pattern classifications
 - **Large Vocabularies**: Apply dimensionality reduction or clustering to create manageable alphabets
 
-### ❌ Poor Fit
+### Poor Fit
 - **Raw Continuous Data**: Unprocessed sensor readings, audio waveforms, high-frequency financial data
 - **Extremely Large Alphabets**: >1000 unique states without preprocessing
 - **Real-Time Streaming**: Microsecond-latency requirements (though batch processing is efficient)
@@ -105,14 +106,14 @@ let detector = AnomalyDetector::with_config(config)?;
 ## Testing
 
 ```bash
-# Run all tests (162 tests)
+# Run all tests
 cargo test
 
 # Run specific test suites
-cargo test unit_           # Unit tests (39 tests)
-cargo test integration_    # Integration tests (24 tests)  
-cargo test domain_         # Domain tests (5 tests)
-cargo test performance_    # Performance tests (36 tests)
+cargo test unit_           # Unit tests
+cargo test integration_    # Integration tests
+cargo test domain_         # Domain tests
+cargo test performance_    # Performance tests (run with --release for perf thresholds)
 
 # Run examples
 cargo run --example quick_start

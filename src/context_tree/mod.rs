@@ -176,6 +176,24 @@ impl ContextNode {
             / (self.total_count as f64 + config.smoothing_alpha * global_vocab_size_f64)
     }
 
+    /// Get probability with proper normalization using global vocabulary by StateId
+    pub fn get_probability_normalized_by_id(
+        &self,
+        state_id: StateId,
+        config: &AnomalyGridConfig,
+        global_vocab_size: usize,
+    ) -> f64 {
+        if self.total_count == 0 {
+            return 1.0 / (global_vocab_size as f64).max(1.0);
+        }
+
+        let count = self.get_count_by_id(state_id) as f64;
+        let global_vocab_size_f64 = global_vocab_size as f64;
+
+        (count + config.smoothing_alpha)
+            / (self.total_count as f64 + config.smoothing_alpha * global_vocab_size_f64)
+    }
+
     /// Calculate Shannon entropy with lazy computation and caching: H(X) = -∑ P(x) log₂ P(x)
     pub fn calculate_entropy(&mut self, config: &AnomalyGridConfig) -> f64 {
         // Check if we have a valid cached value
@@ -352,6 +370,8 @@ pub struct ContextTree {
     pub max_order: usize,
     /// String interner for converting between strings and StateIds
     interner: Arc<StringInterner>,
+    /// Last-used configuration for probability calculations
+    pub(crate) last_config: AnomalyGridConfig,
 }
 
 impl ContextTree {
@@ -363,11 +383,13 @@ impl ContextTree {
 
         let interner = Arc::new(StringInterner::new());
         let trie = ContextTrie::new(max_order, Arc::clone(&interner));
+        let last_config = AnomalyGridConfig::default();
 
         Ok(Self {
             trie,
             max_order,
             interner,
+            last_config,
         })
     }
 
@@ -381,11 +403,13 @@ impl ContextTree {
         }
 
         let trie = ContextTrie::new(max_order, Arc::clone(&interner));
+        let last_config = AnomalyGridConfig::default();
 
         Ok(Self {
             trie,
             max_order,
             interner,
+            last_config,
         })
     }
 
@@ -439,10 +463,15 @@ impl ContextTree {
             }
         }
 
+        // Store last-used config for future probability queries
+        self.last_config = config.clone();
+
         Ok(())
     }
 
     /// Get the transition probability for a given context and next state
+    ///
+    /// Uses the last configuration seen during training (falls back to default if none).
     pub fn get_transition_probability(&self, context: &[String], next_state: &str) -> Option<f64> {
         // Convert context to StateIds
         let context_state_ids: Vec<StateId> = context
@@ -452,7 +481,7 @@ impl ContextTree {
 
         self.trie
             .get_context_data(&context_state_ids)
-            .map(|node| node.get_probability(next_state, &AnomalyGridConfig::default()))
+            .map(|node| node.get_probability(next_state, &self.last_config))
     }
 
     /// Get the transition probability with custom config
@@ -492,6 +521,19 @@ impl ContextTree {
         })
     }
 
+    /// Get the transition probability with proper normalization using StateIds
+    pub fn get_transition_probability_normalized_ids(
+        &self,
+        context_ids: &[StateId],
+        next_state_id: StateId,
+        config: &AnomalyGridConfig,
+        global_vocab_size: usize,
+    ) -> Option<f64> {
+        self.trie.get_context_data(context_ids).map(|node| {
+            node.get_probability_normalized_by_id(next_state_id, config, global_vocab_size)
+        })
+    }
+
     /// Get a context node for the given context
     pub fn get_context_node(&self, context: &[String]) -> Option<&ContextNode> {
         // Convert context to StateIds
@@ -506,6 +548,13 @@ impl ContextTree {
     /// Get the total count for a given context (for adaptive context selection)
     pub fn get_context_count(&self, context: &[String]) -> Option<usize> {
         self.get_context_node(context)
+            .map(|node| node.total_count())
+    }
+
+    /// Get the total count for a given context by StateIds
+    pub fn get_context_count_by_ids(&self, context_ids: &[StateId]) -> Option<usize> {
+        self.trie
+            .get_context_data(context_ids)
             .map(|node| node.total_count())
     }
 
@@ -562,5 +611,34 @@ impl ContextTree {
     /// Get the trie for internal operations
     pub(crate) fn trie(&self) -> &ContextTrie {
         &self.trie
+    }
+
+    /// Rebuild the trie using a filter predicate; returns number of removed contexts
+    pub(crate) fn rebuild_filtered<F>(&mut self, mut keep: F) -> usize
+    where
+        F: FnMut(&[StateId], &ContextNode) -> bool,
+    {
+        let original_count = self.trie.context_count();
+        let mut new_trie = ContextTrie::new(self.max_order, Arc::clone(&self.interner));
+
+        for (state_ids, node) in self.trie.iter_contexts() {
+            if keep(&state_ids, node) {
+                let new_node = new_trie.get_or_create_context_data(&state_ids);
+                for (state_id, count) in node.get_state_counts() {
+                    for _ in 0..count {
+                        new_node.add_transition_by_id(state_id);
+                    }
+                }
+            }
+        }
+
+        // Avoid pruning everything; if nothing would remain, keep original trie
+        if new_trie.context_count() == 0 {
+            0
+        } else {
+            let removed = original_count.saturating_sub(new_trie.context_count());
+            self.trie = new_trie;
+            removed
+        }
     }
 }

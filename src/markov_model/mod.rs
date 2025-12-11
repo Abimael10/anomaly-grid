@@ -6,7 +6,7 @@
 use crate::config::AnomalyGridConfig;
 use crate::context_tree::ContextTree;
 use crate::error::{AnomalyGridError, AnomalyGridResult};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Variable-order Markov model for sequence analysis
 #[derive(Debug, Clone)]
@@ -17,6 +17,10 @@ pub struct MarkovModel {
     state_mapping: HashMap<String, usize>,
     /// Reverse mapping from IDs to states
     id_to_state: Vec<String>,
+    /// Cached marginal counts for fast probability lookups
+    state_counts: HashMap<String, usize>,
+    /// Total token count across all training data
+    total_tokens: usize,
     /// Configuration parameters
     config: AnomalyGridConfig,
 }
@@ -34,6 +38,8 @@ impl MarkovModel {
             context_tree: ContextTree::new(max_order)?,
             state_mapping: HashMap::new(),
             id_to_state: Vec::new(),
+            state_counts: HashMap::new(),
+            total_tokens: 0,
             config,
         })
     }
@@ -46,6 +52,8 @@ impl MarkovModel {
             context_tree: ContextTree::new(config.max_order)?,
             state_mapping: HashMap::new(),
             id_to_state: Vec::new(),
+            state_counts: HashMap::new(),
+            total_tokens: 0,
             config,
         })
     }
@@ -69,8 +77,8 @@ impl MarkovModel {
             ));
         }
 
-        // Build state mapping
-        self.build_state_mapping(sequence);
+        // Prepare vocabulary and counts from the provided sequence
+        self.prepare_state_mapping(&[sequence.to_vec()]);
 
         // Build context tree with configuration
         self.context_tree
@@ -92,6 +100,31 @@ impl MarkovModel {
 
         for i in 1..sequence.len() {
             let prob = self.get_best_context_probability_for_position(sequence, i);
+            likelihood *= prob;
+        }
+
+        likelihood
+    }
+
+    /// Calculate likelihood using precomputed StateIds for faster detection
+    pub fn calculate_likelihood_ids(
+        &self,
+        sequence_ids: &[crate::string_interner::StateId],
+        sequence: &[String],
+    ) -> f64 {
+        if sequence_ids.is_empty() {
+            return 1.0;
+        }
+
+        if sequence_ids.len() == 1 {
+            return self.get_marginal_probability(&sequence[0]);
+        }
+
+        let mut likelihood = 1.0;
+
+        for i in 1..sequence_ids.len() {
+            let prob =
+                self.get_best_context_probability_for_position_ids(sequence_ids, sequence, i);
             likelihood *= prob;
         }
 
@@ -125,6 +158,33 @@ impl MarkovModel {
         self.get_background_probability(next_state)
     }
 
+    /// Get the best context probability using StateIds (faster path for detection)
+    pub fn get_best_context_probability_ids(
+        &self,
+        context_ids: &[crate::string_interner::StateId],
+        next_state_id: crate::string_interner::StateId,
+        next_state: &str,
+    ) -> f64 {
+        if self.state_mapping.contains_key(next_state) {
+            for context_len in (1..=context_ids.len().min(self.context_tree.max_order)).rev() {
+                let sub_context = &context_ids[context_ids.len() - context_len..];
+
+                if let Some(prob) = self.context_tree.get_transition_probability_normalized_ids(
+                    sub_context,
+                    next_state_id,
+                    &self.config,
+                    self.state_mapping.len(),
+                ) {
+                    if self.context_has_sufficient_data_ids(sub_context) {
+                        return prob;
+                    }
+                }
+            }
+        }
+
+        self.get_background_probability(next_state)
+    }
+
     /// Get the maximum order of the model
     pub fn max_order(&self) -> usize {
         self.config.max_order
@@ -151,17 +211,48 @@ impl MarkovModel {
     }
 
     /// Build state mapping from sequence
-    fn build_state_mapping(&mut self, sequence: &[String]) {
-        let mut unique_states: std::collections::HashSet<String> =
-            sequence.iter().cloned().collect();
+    fn build_state_mapping(&mut self, sequence: &[Vec<String>]) {
+        let mut unique_states: HashSet<String> = HashSet::new();
 
+        self.state_counts.clear();
+        self.total_tokens = 0;
         self.state_mapping.clear();
         self.id_to_state.clear();
+
+        for seq in sequence {
+            for token in seq {
+                unique_states.insert(token.clone());
+                *self.state_counts.entry(token.clone()).or_insert(0) += 1;
+                self.total_tokens += 1;
+            }
+        }
 
         for (id, state) in unique_states.drain().enumerate() {
             self.state_mapping.insert(state.clone(), id);
             self.id_to_state.push(state);
         }
+    }
+
+    /// Prepare vocabulary and counts across multiple sequences
+    pub(crate) fn prepare_state_mapping(&mut self, sequences: &[Vec<String>]) {
+        self.build_state_mapping(sequences);
+    }
+
+    /// Train using an existing vocabulary prepared from one or more sequences
+    pub(crate) fn train_with_existing_vocab(
+        &mut self,
+        sequence: &[String],
+    ) -> AnomalyGridResult<()> {
+        if sequence.len() < self.config.min_sequence_length {
+            return Err(AnomalyGridError::sequence_too_short(
+                self.config.min_sequence_length,
+                sequence.len(),
+                "model training",
+            ));
+        }
+
+        self.context_tree
+            .build_from_sequence(sequence, &self.config)
     }
 
     /// Get probability for a specific position in a sequence using adaptive context selection
@@ -196,6 +287,35 @@ impl MarkovModel {
         self.get_background_probability(next_state)
     }
 
+    /// Get probability for a specific position using StateIds (fast path)
+    fn get_best_context_probability_for_position_ids(
+        &self,
+        sequence_ids: &[crate::string_interner::StateId],
+        sequence: &[String],
+        position: usize,
+    ) -> f64 {
+        let next_state_id = sequence_ids[position];
+        let next_state = &sequence[position];
+        let max_context_len = position.min(self.context_tree.max_order);
+
+        for context_len in (1..=max_context_len).rev() {
+            let context_ids = &sequence_ids[position - context_len..position];
+
+            if let Some(prob) = self.context_tree.get_transition_probability_normalized_ids(
+                context_ids,
+                next_state_id,
+                &self.config,
+                self.state_mapping.len(),
+            ) {
+                if self.context_has_sufficient_data_ids(context_ids) {
+                    return prob;
+                }
+            }
+        }
+
+        self.get_background_probability(next_state)
+    }
+
     /// Check if a context has sufficient data for reliable probability estimation
     fn context_has_sufficient_data(&self, context: &[String]) -> bool {
         // Calculate minimum count threshold based on context length
@@ -216,29 +336,37 @@ impl MarkovModel {
         }
     }
 
+    /// Check if a context has sufficient data (StateId variant)
+    fn context_has_sufficient_data_ids(
+        &self,
+        context_ids: &[crate::string_interner::StateId],
+    ) -> bool {
+        let min_count_threshold = match context_ids.len() {
+            1 => 1,
+            2 => 2,
+            3 => 3,
+            4 => 4,
+            _ => 5,
+        };
+
+        if let Some(context_count) = self.context_tree.get_context_count_by_ids(context_ids) {
+            context_count >= min_count_threshold
+        } else {
+            false
+        }
+    }
+
     /// Get marginal probability of a state from the training data
     pub fn get_marginal_probability(&self, state: &str) -> f64 {
-        // Calculate marginal probability by counting occurrences across all contexts
-        let mut total_count = 0;
-        let mut state_count = 0;
-
-        // Iterate through all contexts in the context tree
-        for (_context_states, context_node) in self.context_tree.trie().iter_contexts() {
-            let context_total = context_node.total_count();
-            total_count += context_total;
-
-            // Count occurrences of our target state in this context
-            state_count += context_node.get_count(state);
-        }
-
-        if total_count == 0 {
+        if self.total_tokens == 0 {
             return self.get_background_probability(state);
         }
 
         // Apply smoothing
         let vocab_size = self.state_mapping.len() as f64;
-        let smoothed_count = state_count as f64 + self.config.smoothing_alpha;
-        let smoothed_total = total_count as f64 + self.config.smoothing_alpha * vocab_size;
+        let raw_count = self.state_counts.get(state).copied().unwrap_or(0) as f64;
+        let smoothed_count = raw_count + self.config.smoothing_alpha;
+        let smoothed_total = self.total_tokens as f64 + self.config.smoothing_alpha * vocab_size;
 
         (smoothed_count / smoothed_total).max(self.config.min_probability)
     }
