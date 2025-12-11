@@ -1,14 +1,20 @@
 [package]
 name = "anomaly-grid"
-version = "0.4.1"
+version = "0.4.2"
 edition = "2021"
 authors = ["Juan Abimael Santos Castillo"]
-description = "Variable-order Markov model library for anomaly detection in finite-alphabet sequences with information-theoretic scoring."
+description = "Sequential pattern analysis through variable-order Markov chains. Built for detecting deviations in finite-alphabet sequences."
 license = "MIT"
 repository = "https://github.com/Abimael10/anomaly-grid"
-keywords = ["anomaly-detection", "markov-chains", "sequence-analysis", "pattern-detection"]
+keywords = [
+    "anomaly-detection",
+    "markov-chains",
+    "sequence-modeling",
+    "time-series",
+    "log-analysis",
+]
 readme = "README.md"
-categories = ["science", "algorithms", "data-structures", "visualization", "mathematics"]
+categories = ["markov-chains","algorithms","data-structures","time-series","mathematics"]
 
 [dependencies]
 rayon = "1.10.0"

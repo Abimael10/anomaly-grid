@@ -6,14 +6,12 @@
     ██╔══██║██║╚██╗██║██║   ██║██║╚██╔╝██║██╔══██║██║    ╚██╔╝  
     ██║  ██║██║ ╚████║╚██████╔╝██║ ╚═╝ ██║██║  ██║███████╗██║   
     ╚═╝  ╚═╝╚═╝  ╚═══╝ ╚═════╝ ╚═╝     ╚═╝╚═╝  ╚═╝╚══════╝╚═╝   
-    [ANOMALY-GRID v0.4.1] - SEQUENCE ANOMALY DETECTION ENGINE
+    [ANOMALY-GRID v0.4.2] - SEQUENCE ANOMALY DETECTION ENGINE
 
 [![Crates.io](https://img.shields.io/crates/v/anomaly-grid.svg)](https://crates.io/crates/anomaly-grid)
 [![Downloads](https://img.shields.io/crates/d/anomaly-grid.svg)](https://crates.io/crates/anomaly-grid)
-[![PyPI version](https://img.shields.io/pypi/v/anomaly-grid-py.svg)](https://pypi.org/project/anomaly-grid-py/)
 [![Documentation](https://docs.rs/anomaly-grid/badge.svg)](https://docs.rs/anomaly-grid)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests](https://img.shields.io/badge/tests-passing-brightgreen.svg)](#testing)
 
 A Rust library implementing variable-order Markov chains for sequence anomaly detection in finite alphabets.
 
@@ -23,7 +21,7 @@ To use a Python wrapper of this library implementations refer, to my other repos
 
 ```toml
 [dependencies]
-anomaly-grid = "0.4.1"
+anomaly-grid = "0.4.2"
 ```
 
 ```rust
@@ -70,12 +68,11 @@ Expected output with the above data:
 
 ## What This Library Does
 
-- **Variable-Order Markov Models**: Builds contexts of length 1 to max_order from training sequences with hierarchical context selection
-- **Adaptive Context Selection**: Uses longest available context with sufficient data, falls back to shorter contexts automatically
-- **Information-Theoretic Scoring**: Shannon entropy and KL divergence calculations with lazy computation and caching
-- **Memory-Optimized Storage**: String interning, trie-based context storage with prefix sharing, and SmallVec for efficient small collections
-- **Parallel Batch Processing**: Processes multiple sequences concurrently using Rayon
-- **Comprehensive Testing**: Extensive unit, integration, domain, and performance validation
+- Variable-order Markov modeling for finite alphabets (order 1..max_order with fallback).
+- On-the-fly scoring: likelihood + information score, combined into an anomaly strength.
+- Memory-conscious storage: string interning, trie-based contexts, SmallVec for small counts.
+- Batch processing: detect anomalies across many sequences in parallel (Rayon).
+- Tunable config: smoothing, weights, memory limit, and optimization helpers for pruning.
 
 ## Configuration
 
@@ -89,35 +86,29 @@ let config = AnomalyGridConfig::default()
 let detector = AnomalyDetector::with_config(config)?;
 ```
 
-## Use Cases
+## Use Cases (with context)
 
-### Excellent Fit
-- **Software Development Workflows**: Git command sequences, CI/CD pipeline analysis, code review patterns
-- **Database Query Optimization**: SQL operation sequences, transaction pattern analysis, N+1 query detection
-- **Network Protocol Analysis**: TCP/HTTP/TLS state transitions, protocol compliance verification, traffic flow analysis
-- **System Administration**: CLI command sequences, automation pattern detection, user proficiency analysis
-- **Creative Pattern Analysis**: Musical composition analysis, artistic workflow patterns, style classification
-- **Security Monitoring**: Login sequences, access patterns, behavioral anomaly detection
-- **IoT and Sensor Networks**: Device state transitions, sensor reading patterns, equipment health monitoring
+Markov chains **are not state of the art** for anomaly detection. Modern systems favor deep sequence, probabilistic, and graph-based models. This library remains useful when you need:
+- Discrete, low-dimensional states with short contexts.
+- Predictable workflows where interpretability matters.
+- Ultra-low-latency or resource-constrained inference.
 
-### Good Fit
-- **Business Process Mining**: Workflow step sequences, process compliance, bottleneck identification
-- **User Experience Analysis**: Click sequences, navigation patterns, conversion funnel analysis
-- **Manufacturing Quality Control**: Production step sequences, assembly line monitoring, defect pattern detection
-- **Financial Transaction Analysis**: Payment sequences, fraud pattern detection, risk assessment
-- **Healthcare Workflow Analysis**: Treatment sequences, care pathway optimization, protocol adherence
+### Practical fits
+- **Network/Protocol flows**: Finite state machines, handshake/order violations.
+- **Small structured workflows**: Ops runbooks, CLI/session macros, simple ETL steps.
+- **Device/state telemetry**: Low-cardinality IoT states, embedded controllers.
 
-### Requires Preprocessing
-- **Natural Language Processing**: Tokenize to categorical sequences (POS tags, named entities, semantic categories)
-- **Time Series Data**: Discretize continuous values into categorical states or trend patterns
-- **High-Resolution Sensor Data**: Aggregate into categorical states or pattern classifications
-- **Large Vocabularies**: Apply dimensionality reduction or clustering to create manageable alphabets
+### Not a fit without heavy preprocessing
+- High-dimensional logs/sensors or complex user behavior with long-range dependencies.
+- Large alphabets or non-stationary patterns.
+- Continuous/unstructured data (images, audio, raw text) without discretization.
 
-### Poor Fit
-- **Raw Continuous Data**: Unprocessed sensor readings, audio waveforms, high-frequency financial data
-- **Extremely Large Alphabets**: >1000 unique states without preprocessing
-- **Real-Time Streaming**: Microsecond-latency requirements (though batch processing is efficient)
-- **Unstructured Data**: Images, videos, raw binary data without categorical interpretation
+### Current state-of-the-art alternatives
+- **Deep sequence models**: LSTM/GRU, Transformers (TFT, Anomaly Transformer, TS foundation models), autoencoders/VAEs.
+- **Probabilistic deep models**: Normalizing flows, diffusion, energy-based models.
+- **Graph/representation learning**: GNNs, dynamic graph embeddings, contrastive methods.
+- **Classical statistical baselines**: HMMs (strong Markovian baseline), GMMs/Bayesian changepoint, ARIMA/VAR/Kalman for continuous signals.
+- **TS foundation models (2023–2025)**: TimeGPT, Chronos, MOIRAI, DeepTime.
 
 ## Testing
 
@@ -135,7 +126,6 @@ cargo test performance_    # Performance tests (run with --release for perf thre
 cargo run --example communication_protocol_analysis
 cargo run --example network_protocol_analysis
 cargo run --example protein_folding_sequences
-cargo run --example docs_validation
 ```
 
 ## Documentation
