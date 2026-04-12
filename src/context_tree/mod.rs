@@ -317,45 +317,12 @@ impl ContextNode {
             .collect()
     }
 
-    /// Reset the context node for reuse in memory pool
-    pub fn reset(&mut self, interner: Arc<StringInterner>) {
-        self.counts = TransitionCounts::new();
-        self.total_count = 0;
-        self.interner = interner;
-        self.cached_entropy = None;
-        self.cached_kl_divergence = None;
-        self.cached_config_hash = None;
-    }
-
-    /// Clear the context node data for memory pool return
-    pub fn clear(&mut self) {
-        self.counts = TransitionCounts::new();
-        self.total_count = 0;
-        self.cached_entropy = None;
-        self.cached_kl_divergence = None;
-        self.cached_config_hash = None;
-        // Keep the interner for potential reuse
-    }
-
     /// Get cache hit statistics for monitoring
     pub fn cache_stats(&self) -> (bool, bool) {
         (
             self.cached_entropy.is_some(),
             self.cached_kl_divergence.is_some(),
         )
-    }
-}
-
-impl Default for ContextNode {
-    fn default() -> Self {
-        Self {
-            counts: TransitionCounts::new(),
-            total_count: 0,
-            interner: Arc::new(StringInterner::new()),
-            cached_entropy: None,
-            cached_kl_divergence: None,
-            cached_config_hash: None,
-        }
     }
 }
 

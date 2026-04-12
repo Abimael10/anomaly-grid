@@ -67,7 +67,6 @@ pub mod context_tree;
 pub mod context_trie;
 pub mod error;
 pub mod markov_model;
-pub mod memory_pool;
 pub mod performance;
 pub mod string_interner;
 pub mod transition_counts;

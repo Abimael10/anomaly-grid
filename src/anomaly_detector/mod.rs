@@ -9,15 +9,8 @@ use crate::error::{AnomalyGridError, AnomalyGridResult};
 use crate::markov_model::MarkovModel;
 use crate::performance::{optimize_context_tree, OptimizationConfig, PerformanceMetrics};
 use crate::string_interner::StateId;
-use std::cell::RefCell;
 use std::sync::Arc;
 use std::time::Instant;
-use std::thread_local;
-
-thread_local! {
-    /// Thread-local scratch buffer for state IDs to reduce per-call allocations
-    static STATE_ID_BUFFER: RefCell<Vec<StateId>> = RefCell::new(Vec::new());
-}
 
 /// Anomaly score for a sequence window
 #[derive(Debug, Clone)]
@@ -325,64 +318,58 @@ impl AnomalyDetector {
             return self.detect_with_adaptive_order(sequence, threshold);
         }
 
-        STATE_ID_BUFFER.with(|buffer| {
-            // Precompute StateIds once per sequence to avoid repeated interning and allocations
-            let interner = Arc::clone(self.model.context_tree().interner());
-            let mut sequence_ids = buffer.borrow_mut();
-            sequence_ids.clear();
-            sequence_ids.extend(sequence.iter().map(|s| interner.get_or_intern(s)));
+        let interner = Arc::clone(self.model.context_tree().interner());
+        let sequence_ids: Vec<StateId> =
+            sequence.iter().map(|s| interner.get_or_intern(s)).collect();
 
-            // Fast-path: if the sequence is a single repeated symbol and the score is below threshold,
-            // we can return early without sliding every window.
-            if sequence.len() > 1 && sequence.windows(2).all(|w| w[0] == w[1]) {
-                let window_size = (self.model.max_order() + 1).min(sequence.len());
-                if let Some((likelihood, log_likelihood, information_score, anomaly_strength)) = self
-                    .compute_anomaly_metrics_with_ids(
-                        &sequence[..window_size],
-                        &sequence_ids[..window_size],
-                        false,
-                    )
-                {
-                    if anomaly_strength < threshold {
-                        return Ok(Vec::new());
-                    }
+        // Fast-path: if the sequence is a single repeated symbol and the score is below threshold,
+        // we can return early without sliding every window.
+        if sequence.len() > 1 && sequence.windows(2).all(|w| w[0] == w[1]) {
+            let window_size = (self.model.max_order() + 1).min(sequence.len());
+            if let Some((likelihood, log_likelihood, information_score, anomaly_strength)) = self
+                .compute_anomaly_metrics_with_ids(
+                    &sequence[..window_size],
+                    &sequence_ids[..window_size],
+                    false,
+                )
+            {
+                if anomaly_strength < threshold {
+                    return Ok(Vec::new());
+                }
 
-                    // Return a single representative anomaly score for uniform sequences
-                    return Ok(vec![AnomalyScore::new_v2(
-                        sequence[..window_size].to_vec(),
+                return Ok(vec![AnomalyScore::new_v2(
+                    sequence[..window_size].to_vec(),
+                    likelihood,
+                    log_likelihood,
+                    information_score,
+                    self.model.config(),
+                )]);
+            }
+        }
+
+        let window_size = self.model.max_order() + 1;
+        let mut anomalies = Vec::with_capacity(sequence.len().saturating_sub(window_size) + 1);
+
+        for (window, window_ids) in sequence
+            .windows(window_size)
+            .zip(sequence_ids.windows(window_size))
+        {
+            if let Some((likelihood, log_likelihood, information_score, anomaly_strength)) =
+                self.compute_anomaly_metrics_with_ids(window, window_ids, false)
+            {
+                if anomaly_strength >= threshold {
+                    anomalies.push(AnomalyScore::new_v2(
+                        window.to_vec(),
                         likelihood,
                         log_likelihood,
                         information_score,
                         self.model.config(),
-                    )]);
+                    ));
                 }
             }
+        }
 
-            let window_size = self.model.max_order() + 1;
-            let mut anomalies =
-                Vec::with_capacity(sequence.len().saturating_sub(window_size) + 1);
-
-            for (window, window_ids) in sequence
-                .windows(window_size)
-                .zip(sequence_ids.windows(window_size))
-            {
-                if let Some((likelihood, log_likelihood, information_score, anomaly_strength)) =
-                    self.compute_anomaly_metrics_with_ids(window, window_ids, false)
-                {
-                    if anomaly_strength >= threshold {
-                        anomalies.push(AnomalyScore::new_v2(
-                            window.to_vec(),
-                            likelihood,
-                            log_likelihood,
-                            information_score,
-                            self.model.config(),
-                        ));
-                    }
-                }
-            }
-
-            Ok(anomalies)
-        })
+        Ok(anomalies)
     }
 
     /// Detect anomalies with performance monitoring (mutable version)
