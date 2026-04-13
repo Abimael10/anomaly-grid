@@ -52,19 +52,34 @@ fn test_probability_conservation() {
     tree.build_from_sequence(&sequence, &config)
         .expect("Failed to build tree");
 
-    // Test probability conservation for all contexts
+    // With global-alphabet Laplace smoothing, the full distribution over all
+    // |Σ| symbols sums to 1.0. `get_all_probabilities` only returns observed
+    // symbols, so their sum ≤ 1.0; the remaining mass covers unseen symbols.
+    let gv = tree.global_vocab_size();
     for (context, node) in &tree.contexts() {
-        let probabilities = node.get_all_probabilities(&config);
+        let probabilities = node.get_all_probabilities(&config, gv);
         let prob_sum: f64 = probabilities.values().sum();
 
+        // Observed probabilities must not exceed 1.0
         assert!(
-            (prob_sum - 1.0).abs() < 1e-10,
-            "Probability conservation violated for context {:?}: sum = {:.15}",
+            prob_sum <= 1.0 + 1e-10,
+            "Observed probability sum exceeds 1.0 for context {:?}: sum = {:.15}",
             context,
             prob_sum
         );
 
-        // Verify all individual probabilities are in [0,1]
+        // Full distribution sums to 1: observed + (|Σ| - |observed|) * smoothed_unseen
+        let unseen_count = gv.saturating_sub(probabilities.len());
+        let alpha = config.smoothing_alpha;
+        let unseen_prob = alpha / (node.total_count() as f64 + alpha * gv as f64);
+        let full_sum = prob_sum + unseen_count as f64 * unseen_prob;
+        assert!(
+            (full_sum - 1.0).abs() < 1e-10,
+            "Full probability sum violated for context {:?}: sum = {:.15}",
+            context,
+            full_sum
+        );
+
         for (symbol, &prob) in &probabilities {
             assert!(
                 (0.0..=1.0).contains(&prob),
@@ -91,10 +106,11 @@ fn test_entropy_calculations() {
         .expect("Failed to build tree");
 
     // Test entropy properties for all contexts
+    let gv = tree.global_vocab_size();
     for (context, node) in &tree.contexts() {
-        let entropy = node.compute_entropy(&config);
-        let vocab_size = node.vocab_size() as f64;
-        let max_entropy = vocab_size.log2();
+        let entropy = node.compute_entropy(&config, gv);
+        // With global alphabet smoothing, max possible entropy is log₂(|Σ|)
+        let max_entropy = (gv as f64).log2();
 
         // Entropy must be non-negative
         assert!(
@@ -137,8 +153,9 @@ fn test_kl_divergence_properties() {
         .expect("Failed to build tree");
 
     // Test KL divergence properties for all contexts
+    let gv = tree.global_vocab_size();
     for (context, node) in &tree.contexts() {
-        let kl_divergence = node.compute_kl_divergence(&config);
+        let kl_divergence = node.compute_kl_divergence(&config, gv);
 
         // KL divergence must be non-negative
         assert!(
@@ -179,16 +196,18 @@ fn test_laplace_smoothing() {
     tree.build_from_sequence(&sequence, &config)
         .expect("Failed to build tree");
 
-    // Test exact Laplace smoothing formula: P(x) = (count(x) + α) / (N + α*|V|)
+    // Test exact Laplace smoothing formula: P(x) = (count(x) + α) / (N + α*|Σ|)
+    // Global alphabet: {A, B, C} → |Σ| = 3
     if let Some(node) = tree.get_context_node(&["A".to_string()]) {
-        // Expected probabilities with α=2.0:
-        // P(B|A) = (2 + 2) / (3 + 2*2) = 4/7
-        // P(C|A) = (1 + 2) / (3 + 2*2) = 3/7
-        let expected_prob_b = 4.0 / 7.0;
-        let expected_prob_c = 3.0 / 7.0;
+        // Context "A": count(B)=2, count(C)=1, total=3, α=2.0, |Σ|=3
+        // P(B|A) = (2 + 2) / (3 + 2*3) = 4/9
+        // P(C|A) = (1 + 2) / (3 + 2*3) = 3/9 = 1/3
+        let expected_prob_b = 4.0 / 9.0;
+        let expected_prob_c = 3.0 / 9.0;
 
-        let actual_prob_b = node.get_probability("B", &config);
-        let actual_prob_c = node.get_probability("C", &config);
+        let gv = tree.global_vocab_size();
+        let actual_prob_b = node.get_probability("B", &config, gv);
+        let actual_prob_c = node.get_probability("C", &config, gv);
 
         let error_b = (actual_prob_b - expected_prob_b).abs();
         let error_c = (actual_prob_c - expected_prob_c).abs();
@@ -333,8 +352,8 @@ fn test_deterministic_vs_uniform_entropy() {
         det_tree.get_context_node(&["A".to_string()]),
         uniform_tree.get_context_node(&["A".to_string()]),
     ) {
-        let det_entropy = det_node.compute_entropy(&config);
-        let uniform_entropy = uniform_node.compute_entropy(&config);
+        let det_entropy = det_node.compute_entropy(&config, det_tree.global_vocab_size());
+        let uniform_entropy = uniform_node.compute_entropy(&config, uniform_tree.global_vocab_size());
 
         // Uniform distribution should have higher entropy
         assert!(

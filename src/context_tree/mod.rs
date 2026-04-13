@@ -13,115 +13,67 @@ use crate::context_trie::ContextTrie;
 use crate::error::{AnomalyGridError, AnomalyGridResult};
 use crate::string_interner::{StateId, StringInterner};
 use crate::transition_counts::TransitionCounts;
-use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
-use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
-/// A node in the context tree that stores transition statistics
+/// A node in the context tree that stores transition statistics.
 ///
-/// Uses optimized storage for small collections and StateId for memory efficiency
-/// Implements lazy computation with caching for entropy and KL divergence
+/// All probability queries use the **global** alphabet size (|Σ|) so that
+/// Laplace-smoothed distributions are properly normalised across the full
+/// symbol set, not just the symbols observed in this context.
 #[derive(Debug, Clone)]
 pub struct ContextNode {
-    /// Optimized transition counts using SmallVec for small collections
     counts: TransitionCounts,
-    /// Cached total count to avoid recomputation
     total_count: usize,
-    /// String interner for converting between strings and StateIds
     interner: Arc<StringInterner>,
-    /// Cached entropy value (computed lazily)
-    cached_entropy: Option<f64>,
-    /// Cached KL divergence value (computed lazily)
-    cached_kl_divergence: Option<f64>,
-    /// Configuration hash for cache invalidation
-    cached_config_hash: Option<u64>,
 }
 
 impl ContextNode {
-    /// Create a new empty context node with string interner
     pub fn new(interner: Arc<StringInterner>) -> Self {
         Self {
             counts: TransitionCounts::new(),
             total_count: 0,
             interner,
-            cached_entropy: None,
-            cached_kl_divergence: None,
-            cached_config_hash: None,
         }
     }
 
-    /// Add a transition to this context using string interning
     pub fn add_transition(&mut self, next_state: &str) {
         let state_id = self.interner.get_or_intern(next_state);
         self.counts.increment(state_id);
         self.total_count += 1;
-        self.invalidate_cache();
     }
 
-    /// Add a transition using StateId directly (internal use)
     pub fn add_transition_by_id(&mut self, state_id: StateId) {
         self.counts.increment(state_id);
         self.total_count += 1;
-        self.invalidate_cache();
     }
 
-    /// Invalidate cached computations when data changes
-    fn invalidate_cache(&mut self) {
-        self.cached_entropy = None;
-        self.cached_kl_divergence = None;
-        self.cached_config_hash = None;
-    }
-
-    /// Compute a hash of the configuration for cache validation
-    fn compute_config_hash(config: &AnomalyGridConfig) -> u64 {
-        let mut hasher = DefaultHasher::new();
-        // Hash the relevant configuration parameters that affect entropy/KL divergence
-        config.smoothing_alpha.to_bits().hash(&mut hasher);
-        hasher.finish()
-    }
-
-    /// Check if the cached values are valid for the given configuration
-    fn is_cache_valid(&self, config: &AnomalyGridConfig) -> bool {
-        if let Some(cached_hash) = self.cached_config_hash {
-            cached_hash == Self::compute_config_hash(config)
-        } else {
-            false
-        }
-    }
-
-    /// Get the total number of transitions from this context
     pub fn total_count(&self) -> usize {
         self.total_count
     }
 
-    /// Get the count for a specific next state
     pub fn get_count(&self, next_state: &str) -> usize {
         let state_id = self.interner.get_or_intern(next_state);
         self.counts.get(state_id)
     }
 
-    /// Get the count for a StateId directly (internal use)
     pub fn get_count_by_id(&self, state_id: StateId) -> usize {
         self.counts.get(state_id)
     }
 
-    /// Get the number of unique next states
+    /// Number of distinct symbols observed after this context.
     pub fn vocab_size(&self) -> usize {
         self.counts.len()
     }
 
-    /// Get all state IDs with their counts (internal use)
     pub fn get_state_counts(&self) -> impl Iterator<Item = (StateId, usize)> + '_ {
         self.counts.iter()
     }
 
-    /// Get the sum of all transition counts (for compatibility)
     pub fn total_transitions(&self) -> usize {
         self.total_count
     }
 
-    /// Get all counts as strings for compatibility with performance module
     pub fn get_string_counts(&self) -> HashMap<String, usize> {
         self.counts
             .iter()
@@ -129,200 +81,92 @@ impl ContextNode {
             .collect()
     }
 
-    /// Get counts for debugging (returns string representation)
     pub fn counts(&self) -> HashMap<String, usize> {
         self.get_string_counts()
     }
 
-    /// Get the probability for a specific next state using Laplace smoothing
+    // ── probability ────────────────────────────────────────────────────
+
+    /// Laplace-smoothed conditional probability using **global** alphabet.
     ///
-    /// Computes probability on-demand: P(state) = (count + α) / (total + α * |V|)
-    pub fn get_probability(&self, next_state: &str, config: &AnomalyGridConfig) -> f64 {
-        let state_id = self.interner.get_or_intern(next_state);
-        self.get_probability_by_id(state_id, config)
-    }
-
-    /// Get probability for a StateId directly (internal use)
-    pub fn get_probability_by_id(&self, state_id: StateId, config: &AnomalyGridConfig) -> f64 {
-        if self.total_count == 0 {
-            return 1.0 / (self.vocab_size() as f64).max(1.0);
-        }
-
-        let count = self.get_count_by_id(state_id) as f64;
-        let vocab_size = self.vocab_size() as f64;
-
-        (count + config.smoothing_alpha)
-            / (self.total_count as f64 + config.smoothing_alpha * vocab_size)
-    }
-
-    /// Get probability with proper normalization using global vocabulary size
-    pub fn get_probability_normalized(
+    /// P(state | context) = (count + α) / (N + α·|Σ|)
+    ///
+    /// When no transitions have been observed, returns 1/|Σ| (uniform).
+    pub fn get_probability(
         &self,
         next_state: &str,
         config: &AnomalyGridConfig,
         global_vocab_size: usize,
     ) -> f64 {
-        if self.total_count == 0 {
-            return 1.0 / (global_vocab_size as f64).max(1.0);
-        }
-
         let state_id = self.interner.get_or_intern(next_state);
-        let count = self.get_count_by_id(state_id) as f64;
-        let global_vocab_size_f64 = global_vocab_size as f64;
-
-        // Use global vocabulary size for proper normalization
-        // This ensures that probabilities for all states in the global vocabulary sum to 1
-        (count + config.smoothing_alpha)
-            / (self.total_count as f64 + config.smoothing_alpha * global_vocab_size_f64)
+        self.get_probability_by_id(state_id, config, global_vocab_size)
     }
 
-    /// Get probability with proper normalization using global vocabulary by StateId
-    pub fn get_probability_normalized_by_id(
+    pub fn get_probability_by_id(
         &self,
         state_id: StateId,
         config: &AnomalyGridConfig,
         global_vocab_size: usize,
     ) -> f64 {
+        let v = (global_vocab_size as f64).max(1.0);
         if self.total_count == 0 {
-            return 1.0 / (global_vocab_size as f64).max(1.0);
+            return 1.0 / v;
         }
-
         let count = self.get_count_by_id(state_id) as f64;
-        let global_vocab_size_f64 = global_vocab_size as f64;
-
         (count + config.smoothing_alpha)
-            / (self.total_count as f64 + config.smoothing_alpha * global_vocab_size_f64)
+            / (self.total_count as f64 + config.smoothing_alpha * v)
     }
 
-    /// Calculate Shannon entropy with lazy computation and caching: H(X) = -∑ P(x) log₂ P(x)
-    pub fn calculate_entropy(&mut self, config: &AnomalyGridConfig) -> f64 {
-        // Check if we have a valid cached value
-        if self.is_cache_valid(config) {
-            if let Some(cached_entropy) = self.cached_entropy {
-                return cached_entropy;
-            }
-        }
+    // ── information-theoretic measures ─────────────────────────────────
 
-        // Compute entropy
-        let entropy = if self.total_count == 0 {
-            0.0
-        } else {
-            self.counts
-                .keys()
-                .map(|state_id| {
-                    let p = self.get_probability_by_id(state_id, config);
-                    if p > 0.0 {
-                        -p * p.log2()
-                    } else {
-                        0.0
-                    }
-                })
-                .sum()
-        };
-
-        // Cache the result
-        self.cached_entropy = Some(entropy);
-        self.cached_config_hash = Some(Self::compute_config_hash(config));
-
-        entropy
-    }
-
-    /// Calculate Shannon entropy without caching (for immutable access)
-    pub fn compute_entropy(&self, config: &AnomalyGridConfig) -> f64 {
+    /// Shannon entropy H(X) = −∑ P(x) log₂ P(x), summed over observed symbols.
+    pub fn compute_entropy(&self, config: &AnomalyGridConfig, global_vocab_size: usize) -> f64 {
         if self.total_count == 0 {
             return 0.0;
         }
-
         self.counts
             .keys()
             .map(|state_id| {
-                let p = self.get_probability_by_id(state_id, config);
-                if p > 0.0 {
-                    -p * p.log2()
-                } else {
-                    0.0
-                }
+                let p = self.get_probability_by_id(state_id, config, global_vocab_size);
+                if p > 0.0 { -p * p.log2() } else { 0.0 }
             })
             .sum()
     }
 
-    /// Calculate KL divergence from uniform distribution with lazy computation and caching
-    pub fn calculate_kl_divergence(&mut self, config: &AnomalyGridConfig) -> f64 {
-        // Check if we have a valid cached value
-        if self.is_cache_valid(config) {
-            if let Some(cached_kl_div) = self.cached_kl_divergence {
-                return cached_kl_div;
-            }
-        }
-
-        // Compute KL divergence
-        let kl_divergence = if self.total_count == 0 {
-            0.0
-        } else {
-            let uniform_prob = 1.0 / self.vocab_size() as f64;
-
-            self.counts
-                .keys()
-                .map(|state_id| {
-                    let p = self.get_probability_by_id(state_id, config);
-                    if p > 0.0 {
-                        p * (p / uniform_prob).log2()
-                    } else {
-                        0.0
-                    }
-                })
-                .sum()
-        };
-
-        // Cache the result
-        self.cached_kl_divergence = Some(kl_divergence);
-        self.cached_config_hash = Some(Self::compute_config_hash(config));
-
-        kl_divergence
-    }
-
-    /// Calculate KL divergence from uniform distribution without caching (for immutable access)
-    pub fn compute_kl_divergence(&self, config: &AnomalyGridConfig) -> f64 {
-        if self.total_count == 0 {
+    /// KL divergence D_KL(P ‖ U) from the uniform distribution over the
+    /// global alphabet.
+    pub fn compute_kl_divergence(
+        &self,
+        config: &AnomalyGridConfig,
+        global_vocab_size: usize,
+    ) -> f64 {
+        if self.total_count == 0 || global_vocab_size == 0 {
             return 0.0;
         }
-
-        let uniform_prob = 1.0 / self.vocab_size() as f64;
-
+        let uniform_prob = 1.0 / global_vocab_size as f64;
         self.counts
             .keys()
             .map(|state_id| {
-                let p = self.get_probability_by_id(state_id, config);
-                if p > 0.0 {
-                    p * (p / uniform_prob).log2()
-                } else {
-                    0.0
-                }
+                let p = self.get_probability_by_id(state_id, config, global_vocab_size);
+                if p > 0.0 { p * (p / uniform_prob).log2() } else { 0.0 }
             })
             .sum()
     }
 
-    /// Get all probabilities as a HashMap (for compatibility with existing code)
-    ///
-    /// Note: This creates temporary storage and should be used sparingly
-    pub fn get_all_probabilities(&self, config: &AnomalyGridConfig) -> HashMap<String, f64> {
+    /// All probabilities as string→f64 map (diagnostic / test use).
+    pub fn get_all_probabilities(
+        &self,
+        config: &AnomalyGridConfig,
+        global_vocab_size: usize,
+    ) -> HashMap<String, f64> {
         self.counts
             .keys()
             .filter_map(|state_id| {
-                self.interner.get_string(state_id).map(|state_string| {
-                    let prob = self.get_probability_by_id(state_id, config);
-                    (state_string, prob)
+                self.interner.get_string(state_id).map(|s| {
+                    (s, self.get_probability_by_id(state_id, config, global_vocab_size))
                 })
             })
             .collect()
-    }
-
-    /// Get cache hit statistics for monitoring
-    pub fn cache_stats(&self) -> (bool, bool) {
-        (
-            self.cached_entropy.is_some(),
-            self.cached_kl_divergence.is_some(),
-        )
     }
 }
 
@@ -436,69 +280,53 @@ impl ContextTree {
         Ok(())
     }
 
-    /// Get the transition probability for a given context and next state
-    ///
-    /// Uses the last configuration seen during training (falls back to default if none).
+    /// Global alphabet size derived from the interner.
+    pub fn global_vocab_size(&self) -> usize {
+        self.interner.len()
+    }
+
+    /// Get the transition probability for a given context and next state.
     pub fn get_transition_probability(&self, context: &[String], next_state: &str) -> Option<f64> {
-        // Convert context to StateIds
         let context_state_ids: Vec<StateId> = context
             .iter()
             .map(|s| self.interner.get_or_intern(s))
             .collect();
+        let gv = self.interner.len();
 
         self.trie
             .get_context_data(&context_state_ids)
-            .map(|node| node.get_probability(next_state, &self.last_config))
+            .map(|node| node.get_probability(next_state, &self.last_config, gv))
     }
 
-    /// Get the transition probability with custom config
+    /// Get the transition probability with custom config.
     pub fn get_transition_probability_with_config(
         &self,
         context: &[String],
         next_state: &str,
         config: &AnomalyGridConfig,
     ) -> Option<f64> {
-        // Convert context to StateIds
         let context_state_ids: Vec<StateId> = context
             .iter()
             .map(|s| self.interner.get_or_intern(s))
             .collect();
+        let gv = self.interner.len();
 
         self.trie
             .get_context_data(&context_state_ids)
-            .map(|node| node.get_probability(next_state, config))
+            .map(|node| node.get_probability(next_state, config, gv))
     }
 
-    /// Get the transition probability with proper normalization using global vocabulary
-    pub fn get_transition_probability_normalized(
-        &self,
-        context: &[String],
-        next_state: &str,
-        config: &AnomalyGridConfig,
-        global_state_mapping: &std::collections::HashMap<String, usize>,
-    ) -> Option<f64> {
-        // Convert context to StateIds
-        let context_state_ids: Vec<StateId> = context
-            .iter()
-            .map(|s| self.interner.get_or_intern(s))
-            .collect();
-
-        self.trie.get_context_data(&context_state_ids).map(|node| {
-            node.get_probability_normalized(next_state, config, global_state_mapping.len())
-        })
-    }
-
-    /// Get the transition probability with proper normalization using StateIds
-    pub fn get_transition_probability_normalized_ids(
+    /// Get the transition probability using StateIds directly.
+    pub fn get_transition_probability_by_ids(
         &self,
         context_ids: &[StateId],
         next_state_id: StateId,
         config: &AnomalyGridConfig,
-        global_vocab_size: usize,
     ) -> Option<f64> {
-        self.trie.get_context_data(context_ids).map(|node| {
-            node.get_probability_normalized_by_id(next_state_id, config, global_vocab_size)
-        })
+        let gv = self.interner.len();
+        self.trie
+            .get_context_data(context_ids)
+            .map(|node| node.get_probability_by_id(next_state_id, config, gv))
     }
 
     /// Get a context node for the given context

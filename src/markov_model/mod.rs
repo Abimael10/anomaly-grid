@@ -139,11 +139,10 @@ impl MarkovModel {
             for context_len in (1..=context.len().min(self.context_tree.max_order)).rev() {
                 let sub_context = &context[context.len() - context_len..];
 
-                if let Some(prob) = self.context_tree.get_transition_probability_normalized(
+                if let Some(prob) = self.context_tree.get_transition_probability_with_config(
                     sub_context,
                     next_state,
                     &self.config,
-                    &self.state_mapping,
                 ) {
                     // Check if this context has sufficient data for reliable estimation
                     if self.context_has_sufficient_data(sub_context) {
@@ -169,11 +168,10 @@ impl MarkovModel {
             for context_len in (1..=context_ids.len().min(self.context_tree.max_order)).rev() {
                 let sub_context = &context_ids[context_ids.len() - context_len..];
 
-                if let Some(prob) = self.context_tree.get_transition_probability_normalized_ids(
+                if let Some(prob) = self.context_tree.get_transition_probability_by_ids(
                     sub_context,
                     next_state_id,
                     &self.config,
-                    self.state_mapping.len(),
                 ) {
                     if self.context_has_sufficient_data_ids(sub_context) {
                         return prob;
@@ -269,11 +267,10 @@ impl MarkovModel {
         for context_len in (1..=max_context_len).rev() {
             let context = &sequence[position - context_len..position];
 
-            if let Some(prob) = self.context_tree.get_transition_probability_normalized(
+            if let Some(prob) = self.context_tree.get_transition_probability_with_config(
                 context,
                 next_state,
                 &self.config,
-                &self.state_mapping,
             ) {
                 // Check if this context has sufficient data for reliable estimation
                 if self.context_has_sufficient_data(context) {
@@ -301,11 +298,10 @@ impl MarkovModel {
         for context_len in (1..=max_context_len).rev() {
             let context_ids = &sequence_ids[position - context_len..position];
 
-            if let Some(prob) = self.context_tree.get_transition_probability_normalized_ids(
+            if let Some(prob) = self.context_tree.get_transition_probability_by_ids(
                 context_ids,
                 next_state_id,
                 &self.config,
-                self.state_mapping.len(),
             ) {
                 if self.context_has_sufficient_data_ids(context_ids) {
                     return prob;

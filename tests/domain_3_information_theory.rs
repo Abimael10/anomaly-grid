@@ -141,7 +141,7 @@ fn test_shannon_entropy_comprehensive() -> DomainTestResult {
         .context_tree()
         .get_context_node(&vec!["A".to_string()])
     {
-        let entropy_deterministic = context_node.compute_entropy(detector1.model().config());
+        let entropy_deterministic = context_node.compute_entropy(detector1.model().config(), detector1.model().context_tree().global_vocab_size());
         println!("      Deterministic entropy: {:.6}", entropy_deterministic);
 
         // Should be very close to 0 (allowing for smoothing effects)
@@ -174,7 +174,7 @@ fn test_shannon_entropy_comprehensive() -> DomainTestResult {
         .context_tree()
         .get_context_node(&vec!["A".to_string()])
     {
-        let entropy_uniform = context_node.compute_entropy(detector2.model().config());
+        let entropy_uniform = context_node.compute_entropy(detector2.model().config(), detector2.model().context_tree().global_vocab_size());
         println!("      Uniform entropy: {:.6}", entropy_uniform);
 
         // For 4 equally likely outcomes from context A, theoretical max entropy is log₂(4) = 2.0
@@ -210,7 +210,7 @@ fn test_shannon_entropy_comprehensive() -> DomainTestResult {
         .context_tree()
         .get_context_node(&vec!["A".to_string()])
     {
-        let entropy_skewed = context_node.compute_entropy(detector3.model().config());
+        let entropy_skewed = context_node.compute_entropy(detector3.model().config(), detector3.model().context_tree().global_vocab_size());
         println!("      Skewed entropy: {:.6}", entropy_skewed);
         details.push(format!("Skewed entropy: {:.6}", entropy_skewed));
     }
@@ -236,7 +236,7 @@ fn test_shannon_entropy_comprehensive() -> DomainTestResult {
                 .context_tree()
                 .get_context_node(&vec![state.to_string()])
             {
-                let entropy = context_node.compute_entropy(detector.model().config());
+                let entropy = context_node.compute_entropy(detector.model().config(), detector.model().context_tree().global_vocab_size());
                 if entropy < 0.0 {
                     violations += 1;
                     details.push(format!(
@@ -356,11 +356,12 @@ fn test_information_content_properties_comprehensive() -> DomainTestResult {
     // Test relationship with entropy
     println!("    Testing relationship with entropy");
     if let Some(context_node) = detector.model().context_tree().get_context_node(&context) {
-        let entropy = context_node.compute_entropy(detector.model().config());
+        let entropy = context_node.compute_entropy(detector.model().config(), detector.model().context_tree().global_vocab_size());
 
         // Entropy should be the expected information content using the SAME probability source
         let config = detector.model().config();
-        let all_probs = context_node.get_all_probabilities(config);
+        let gv = detector.model().context_tree().global_vocab_size();
+        let all_probs = context_node.get_all_probabilities(config, gv);
 
         let expected_info: f64 = all_probs
             .iter()
@@ -422,11 +423,14 @@ fn test_kl_divergence_comprehensive() -> DomainTestResult {
     println!("    Testing KL divergence from uniform distribution");
 
     let mut detector1 = AnomalyDetector::new(1).expect("Failed to create detector");
-    let uniform_sequence = vec!["A", "B", "C", "D"]
-        .repeat(100)
-        .iter()
-        .map(|s| s.to_string())
-        .collect::<Vec<_>>();
+    // Build a sequence where context "A" transitions equally to A, B, C, D
+    let mut uniform_sequence = Vec::new();
+    for _ in 0..100 {
+        for next in &["A", "B", "C", "D"] {
+            uniform_sequence.push("A".to_string());
+            uniform_sequence.push(next.to_string());
+        }
+    }
     detector1.train(&uniform_sequence).expect("Failed to train");
 
     if let Some(context_node) = detector1
@@ -434,10 +438,10 @@ fn test_kl_divergence_comprehensive() -> DomainTestResult {
         .context_tree()
         .get_context_node(&vec!["A".to_string()])
     {
-        let kl_div_uniform = context_node.compute_kl_divergence(detector1.model().config());
+        let kl_div_uniform = context_node.compute_kl_divergence(detector1.model().config(), detector1.model().context_tree().global_vocab_size());
         println!("      KL divergence (uniform): {:.6}", kl_div_uniform);
 
-        // For uniform distribution, KL divergence from uniform should be close to 0
+        // For uniform transitions from A, KL divergence from uniform should be close to 0
         if kl_div_uniform > 0.1 {
             violations += 1;
             details.push(format!(
@@ -464,7 +468,7 @@ fn test_kl_divergence_comprehensive() -> DomainTestResult {
         .context_tree()
         .get_context_node(&vec!["A".to_string()])
     {
-        let kl_div_skewed = context_node.compute_kl_divergence(detector2.model().config());
+        let kl_div_skewed = context_node.compute_kl_divergence(detector2.model().config(), detector2.model().context_tree().global_vocab_size());
         println!("      KL divergence (skewed): {:.6}", kl_div_skewed);
 
         // Skewed distribution should have higher KL divergence from uniform
@@ -493,7 +497,7 @@ fn test_kl_divergence_comprehensive() -> DomainTestResult {
                 .context_tree()
                 .get_context_node(&vec![state.to_string()])
             {
-                let kl_div = context_node.compute_kl_divergence(detector.model().config());
+                let kl_div = context_node.compute_kl_divergence(detector.model().config(), detector.model().context_tree().global_vocab_size());
                 if kl_div < 0.0 {
                     violations += 1;
                     details.push(format!(
@@ -508,10 +512,14 @@ fn test_kl_divergence_comprehensive() -> DomainTestResult {
     // Test 4: Ordering property (more skewed = higher KL divergence)
     println!("    Testing KL divergence ordering");
 
+    // Sequences where context "A" has progressively more skewed transitions.
+    // "A","B","A","C" → context A transitions: B≈50%, C≈50% (near-uniform → low KL)
+    // "A","B","A","B","A","C" → context A: B≈67%, C≈33% (moderate skew)
+    // "A","B","A","B","A","B","A","C" → context A: B≈75%, C≈25% (high skew)
     let distributions = vec![
-        (vec!["A", "B"].repeat(50), "balanced"),
-        (vec!["A", "A", "B"].repeat(33), "slightly skewed"),
-        (vec!["A", "A", "A", "A", "B"].repeat(20), "highly skewed"),
+        (vec!["A", "B", "A", "C"].repeat(25), "balanced"),
+        (vec!["A", "B", "A", "B", "A", "C"].repeat(16), "slightly skewed"),
+        (vec!["A", "B", "A", "B", "A", "B", "A", "C"].repeat(12), "highly skewed"),
     ];
 
     let mut kl_divs = Vec::new();
@@ -525,7 +533,7 @@ fn test_kl_divergence_comprehensive() -> DomainTestResult {
             .context_tree()
             .get_context_node(&vec!["A".to_string()])
         {
-            let kl_div = context_node.compute_kl_divergence(detector.model().config());
+            let kl_div = context_node.compute_kl_divergence(detector.model().config(), detector.model().context_tree().global_vocab_size());
             kl_divs.push(kl_div);
             println!("      {} KL divergence: {:.6}", description, kl_div);
         }
@@ -578,14 +586,13 @@ fn test_cross_entropy_relationships_comprehensive() -> DomainTestResult {
         .context_tree()
         .get_context_node(&vec!["A".to_string()])
     {
-        let entropy = context_node.compute_entropy(detector.model().config());
-        let kl_divergence = context_node.compute_kl_divergence(detector.model().config());
+        let entropy = context_node.compute_entropy(detector.model().config(), detector.model().context_tree().global_vocab_size());
+        let kl_divergence = context_node.compute_kl_divergence(detector.model().config(), detector.model().context_tree().global_vocab_size());
 
-        // Calculate cross-entropy manually using consistent probability source
-        // For our case, Q is the uniform distribution over the context's vocabulary
-        let all_probs = context_node.get_all_probabilities(detector.model().config());
-        let context_vocab_size = all_probs.len() as f64;
-        let uniform_prob = 1.0 / context_vocab_size;
+        // Calculate cross-entropy manually: Q is the uniform distribution over the global alphabet
+        let gv = detector.model().context_tree().global_vocab_size();
+        let all_probs = context_node.get_all_probabilities(detector.model().config(), gv);
+        let uniform_prob = 1.0 / gv as f64;
 
         let mut cross_entropy = 0.0;
         for (_, prob_p) in &all_probs {
@@ -665,8 +672,8 @@ fn test_information_theory_inequalities() -> DomainTestResult {
                 .context_tree()
                 .get_context_node(&vec![state.to_string()])
             {
-                let entropy = context_node.compute_entropy(detector.model().config());
-                let kl_div = context_node.compute_kl_divergence(detector.model().config());
+                let entropy = context_node.compute_entropy(detector.model().config(), detector.model().context_tree().global_vocab_size());
+                let kl_div = context_node.compute_kl_divergence(detector.model().config(), detector.model().context_tree().global_vocab_size());
 
                 // Test H(X) ≤ log₂|X|
                 if entropy > max_entropy + 0.01 {

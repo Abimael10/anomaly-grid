@@ -82,7 +82,8 @@ impl ContextTree {
         }
 
         let cfg = self.last_config.clone();
-        self.rebuild_filtered(|_, node| node.compute_entropy(&cfg) >= min_entropy)
+        let gv = self.global_vocab_size();
+        self.rebuild_filtered(|_, node| node.compute_entropy(&cfg, gv) >= min_entropy)
     }
 
     /// Keep only the most frequent contexts up to a maximum count
