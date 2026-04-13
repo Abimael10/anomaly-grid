@@ -131,56 +131,66 @@ impl MarkovModel {
         likelihood
     }
 
-    /// Get the best context probability using adaptive hierarchical context selection
+    /// Witten-Bell interpolated probability P(next_state | context).
+    ///
+    /// Recursively blends the ML estimate at each order with the estimate
+    /// at the next-shorter context:
+    ///
+    ///   P_wb(x | c) = λ(c) · P_ml(x | c) + (1 − λ(c)) · P_wb(x | suffix(c))
+    ///
+    /// where λ(c) = N(c) / (N(c) + T(c)), N = total count, T = distinct types.
+    /// Base case (order 0) is the smoothed unigram.
     pub fn get_best_context_probability(&self, context: &[String], next_state: &str) -> f64 {
-        // Check if the state is in the global vocabulary
-        if self.state_mapping.contains_key(next_state) {
-            // For states in global vocabulary, use normalized probability
-            for context_len in (1..=context.len().min(self.context_tree.max_order)).rev() {
-                let sub_context = &context[context.len() - context_len..];
+        let max_ctx = context.len().min(self.context_tree.max_order);
 
-                if let Some(prob) = self.context_tree.get_transition_probability_with_config(
-                    sub_context,
-                    next_state,
-                    &self.config,
-                ) {
-                    // Check if this context has sufficient data for reliable estimation
-                    if self.context_has_sufficient_data(sub_context) {
-                        return prob;
-                    }
-                    // If insufficient data, continue to shorter contexts
+        // Walk from longest context down to order 1, accumulating interpolation
+        let mut prob = self.get_marginal_probability(next_state); // order-0 base
+
+        for context_len in 1..=max_ctx {
+            let sub_context = &context[context.len() - context_len..];
+
+            if let Some(node) = self.context_tree.get_context_node(sub_context) {
+                let n = node.total_count() as f64;
+                let t = node.vocab_size() as f64;
+                if n > 0.0 {
+                    let lambda = n / (n + t);
+                    let gv = self.context_tree.global_vocab_size();
+                    let p_ml = node.get_probability(next_state, &self.config, gv);
+                    prob = lambda * p_ml + (1.0 - lambda) * prob;
                 }
             }
         }
 
-        // Fallback to background probability for unseen transitions or unknown states
-        self.get_background_probability(next_state)
+        prob.max(self.config.min_probability)
     }
 
-    /// Get the best context probability using StateIds (faster path for detection)
+    /// Witten-Bell interpolated probability using StateIds (fast path).
     pub fn get_best_context_probability_ids(
         &self,
         context_ids: &[crate::string_interner::StateId],
         next_state_id: crate::string_interner::StateId,
         next_state: &str,
     ) -> f64 {
-        if self.state_mapping.contains_key(next_state) {
-            for context_len in (1..=context_ids.len().min(self.context_tree.max_order)).rev() {
-                let sub_context = &context_ids[context_ids.len() - context_len..];
+        let max_ctx = context_ids.len().min(self.context_tree.max_order);
 
-                if let Some(prob) = self.context_tree.get_transition_probability_by_ids(
-                    sub_context,
-                    next_state_id,
-                    &self.config,
-                ) {
-                    if self.context_has_sufficient_data_ids(sub_context) {
-                        return prob;
-                    }
+        let mut prob = self.get_marginal_probability(next_state);
+
+        for context_len in 1..=max_ctx {
+            let sub_context = &context_ids[context_ids.len() - context_len..];
+
+            if let Some(node) = self.context_tree.trie().get_context_data(sub_context) {
+                let n = node.total_count() as f64;
+                let t = node.vocab_size() as f64;
+                if n > 0.0 {
+                    let lambda = n / (n + t);
+                    let gv = self.context_tree.global_vocab_size();
+                    let p_ml = node.get_probability_by_id(next_state_id, &self.config, gv);
+                    prob = lambda * p_ml + (1.0 - lambda) * prob;
                 }
             }
         }
 
-        self.get_background_probability(next_state)
+        prob.max(self.config.min_probability)
     }
 
     /// Get the maximum order of the model
@@ -253,132 +263,50 @@ impl MarkovModel {
             .build_from_sequence(sequence, &self.config)
     }
 
-    /// Get probability for a specific position in a sequence using adaptive context selection
+    /// Witten-Bell interpolated probability at a specific position.
     fn get_best_context_probability_for_position(
         &self,
         sequence: &[String],
         position: usize,
     ) -> f64 {
-        let next_state = &sequence[position];
-        let max_context_len = position.min(self.context_tree.max_order);
-
-        // Adaptive context selection: try contexts from longest to shortest,
-        // but only use contexts with sufficient data
-        for context_len in (1..=max_context_len).rev() {
-            let context = &sequence[position - context_len..position];
-
-            if let Some(prob) = self.context_tree.get_transition_probability_with_config(
-                context,
-                next_state,
-                &self.config,
-            ) {
-                // Check if this context has sufficient data for reliable estimation
-                if self.context_has_sufficient_data(context) {
-                    return prob;
-                }
-                // If insufficient data, continue to shorter contexts
-            }
-        }
-
-        // Fallback to background probability
-        self.get_background_probability(next_state)
+        let context = &sequence[..position];
+        self.get_best_context_probability(context, &sequence[position])
     }
 
-    /// Get probability for a specific position using StateIds (fast path)
+    /// Witten-Bell interpolated probability at a specific position (StateId fast path).
     fn get_best_context_probability_for_position_ids(
         &self,
         sequence_ids: &[crate::string_interner::StateId],
         sequence: &[String],
         position: usize,
     ) -> f64 {
-        let next_state_id = sequence_ids[position];
-        let next_state = &sequence[position];
-        let max_context_len = position.min(self.context_tree.max_order);
-
-        for context_len in (1..=max_context_len).rev() {
-            let context_ids = &sequence_ids[position - context_len..position];
-
-            if let Some(prob) = self.context_tree.get_transition_probability_by_ids(
-                context_ids,
-                next_state_id,
-                &self.config,
-            ) {
-                if self.context_has_sufficient_data_ids(context_ids) {
-                    return prob;
-                }
-            }
-        }
-
-        self.get_background_probability(next_state)
+        let context_ids = &sequence_ids[..position];
+        self.get_best_context_probability_ids(
+            context_ids,
+            sequence_ids[position],
+            &sequence[position],
+        )
     }
 
-    /// Check if a context has sufficient data for reliable probability estimation
-    fn context_has_sufficient_data(&self, context: &[String]) -> bool {
-        // Calculate minimum count threshold based on context length
-        // Use more lenient thresholds to allow higher orders to work with reasonable data
-        let min_count_threshold = match context.len() {
-            1 => 1, // Order 1: need at least 1 observation
-            2 => 2, // Order 2: need at least 2 observations
-            3 => 3, // Order 3: need at least 3 observations
-            4 => 4, // Order 4: need at least 4 observations
-            _ => 5, // Order 5+: need at least 5 observations
-        };
-
-        // Check if context has sufficient total count
-        if let Some(context_count) = self.context_tree.get_context_count(context) {
-            context_count >= min_count_threshold
-        } else {
-            false // Context doesn't exist
-        }
-    }
-
-    /// Check if a context has sufficient data (StateId variant)
-    fn context_has_sufficient_data_ids(
-        &self,
-        context_ids: &[crate::string_interner::StateId],
-    ) -> bool {
-        let min_count_threshold = match context_ids.len() {
-            1 => 1,
-            2 => 2,
-            3 => 3,
-            4 => 4,
-            _ => 5,
-        };
-
-        if let Some(context_count) = self.context_tree.get_context_count_by_ids(context_ids) {
-            context_count >= min_count_threshold
-        } else {
-            false
-        }
-    }
-
-    /// Get marginal probability of a state from the training data
+    /// Smoothed unigram probability (order-0 base case).
+    ///
+    /// P(x) = (count(x) + α) / (N + α·|Σ|)
     pub fn get_marginal_probability(&self, state: &str) -> f64 {
+        let gv = self.context_tree.global_vocab_size().max(1) as f64;
         if self.total_tokens == 0 {
-            return self.get_background_probability(state);
+            return (1.0 / gv).max(self.config.min_probability);
         }
-
-        // Apply smoothing
-        let vocab_size = self.state_mapping.len() as f64;
         let raw_count = self.state_counts.get(state).copied().unwrap_or(0) as f64;
-        let smoothed_count = raw_count + self.config.smoothing_alpha;
-        let smoothed_total = self.total_tokens as f64 + self.config.smoothing_alpha * vocab_size;
-
-        (smoothed_count / smoothed_total).max(self.config.min_probability)
+        let smoothed = (raw_count + self.config.smoothing_alpha)
+            / (self.total_tokens as f64 + self.config.smoothing_alpha * gv);
+        smoothed.max(self.config.min_probability)
     }
 
-    /// Get background probability for unseen transitions (public for adaptive scoring)
-    pub fn get_background_probability(&self, state: &str) -> f64 {
-        // If state is known, use uniform probability over known states
-        if self.state_mapping.contains_key(state) {
-            let vocab_size = self.state_mapping.len() as f64;
-            (1.0 / (vocab_size + 1.0)).max(self.config.min_probability)
-        } else {
-            // For completely unknown states, use a reasonable small probability
-            // This ensures that unseen states can still be scored as anomalies
-            let vocab_size = self.state_mapping.len() as f64;
-            let unknown_state_prob = 1.0 / (vocab_size + 2.0); // +2 to account for unknown states
-            unknown_state_prob.max(self.config.min_probability)
-        }
+    /// Background probability for completely unseen symbols.
+    pub fn get_background_probability(&self, _state: &str) -> f64 {
+        let gv = self.context_tree.global_vocab_size().max(1) as f64;
+        let bg = self.config.smoothing_alpha
+            / (self.total_tokens as f64 + self.config.smoothing_alpha * gv);
+        bg.max(self.config.min_probability)
     }
 }
