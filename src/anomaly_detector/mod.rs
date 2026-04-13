@@ -28,7 +28,7 @@ pub struct AnomalyScore {
 }
 
 impl AnomalyScore {
-    /// Create a new anomaly score
+    /// Create a new anomaly score.
     pub fn new(
         sequence: Vec<String>,
         likelihood: f64,
@@ -48,75 +48,30 @@ impl AnomalyScore {
         }
     }
 
-    /// Create a new anomaly score with enhanced discrimination (v2)
+    /// Combined anomaly strength ∈ [0, 1) via `tanh`.
     ///
-    /// This version uses improved anomaly strength calculation for better
-    /// threshold discrimination and ROC-AUC performance.
-    pub fn new_v2(
-        sequence: Vec<String>,
-        likelihood: f64,
-        log_likelihood: f64,
-        information_score: f64,
-        config: &AnomalyGridConfig,
-    ) -> Self {
-        // Use the enhanced calculation
-        let anomaly_strength =
-            Self::calculate_anomaly_strength(likelihood, information_score, config);
-
-        Self {
-            sequence,
-            likelihood,
-            log_likelihood,
-            information_score,
-            anomaly_strength,
-        }
-    }
-
-    /// Calculate combined anomaly strength using configuration parameters
+    /// ```text
+    /// s = w_l · (−ln P) + w_i · I
+    /// anomaly_strength = tanh(s / normalization_factor)
+    /// ```
     ///
-    /// This improved version provides better score discrimination for ROC-AUC analysis
-    /// by ensuring proper ranking: lower likelihood + higher information = higher anomaly strength.
+    /// Smooth, monotonic, and has a single tunable scale via
+    /// `config.normalization_factor` (default 10.0).
     pub(crate) fn calculate_anomaly_strength(
         likelihood: f64,
         information_score: f64,
         config: &AnomalyGridConfig,
     ) -> f64 {
-        // Surprise component: lower likelihood = higher surprise
-        let surprise_component = if likelihood > 0.0 {
-            let neg_log_likelihood = -likelihood.ln();
-            // Normalize to [0,1] range with better scaling
-            let max_surprise = 10.0; // Reasonable maximum surprise
-            (neg_log_likelihood / max_surprise).min(1.0)
+        let surprise = if likelihood > 0.0 {
+            -likelihood.ln()
         } else {
-            1.0 // Maximum surprise for zero likelihood
+            config.normalization_factor * 4.0 // atanh(~1) ≈ 4·scale
         };
 
-        // Information component: higher information = higher anomaly
-        let info_component = if information_score > 0.0 {
-            let max_info = 15.0; // Reasonable maximum information
-            (information_score / max_info).min(1.0)
-        } else {
-            0.0
-        };
+        let raw = surprise * config.likelihood_weight
+            + information_score.max(0.0) * config.information_weight;
 
-        // Combine components with proper weighting
-        let raw_score = surprise_component * config.likelihood_weight
-            + info_component * config.information_weight;
-
-        // Ensure the score is in [0,1] range with good discrimination
-        let normalized_score = raw_score.clamp(0.0, 1.0);
-
-        // Apply a smooth transformation to improve discrimination
-        // This ensures different likelihood/information combinations produce distinct scores
-        let final_score = if normalized_score < 0.1 {
-            normalized_score * 0.5 // Compress very low scores
-        } else if normalized_score < 0.5 {
-            0.05 + (normalized_score - 0.1) * 0.6 // Linear scaling for mid-range
-        } else {
-            0.29 + (normalized_score - 0.5) * 1.42 // Expand high scores
-        };
-
-        final_score.clamp(0.0, 1.0)
+        (raw / config.normalization_factor).tanh()
     }
 }
 
@@ -165,12 +120,6 @@ impl AnomalyDetector {
     /// - Provides warnings for edge cases that may limit performance
     pub fn train(&mut self, sequence: &[String]) -> AnomalyGridResult<()> {
         let start_time = Instant::now();
-
-        // Validate training data quality and provide warnings
-        let warnings = crate::validation::validate_training_data_quality(sequence);
-        for warning in warnings {
-            eprintln!("WARNING: {warning}");
-        }
 
         let result = self.model.train(sequence);
 
@@ -322,31 +271,6 @@ impl AnomalyDetector {
         let sequence_ids: Vec<StateId> =
             sequence.iter().map(|s| interner.get_or_intern(s)).collect();
 
-        // Fast-path: if the sequence is a single repeated symbol and the score is below threshold,
-        // we can return early without sliding every window.
-        if sequence.len() > 1 && sequence.windows(2).all(|w| w[0] == w[1]) {
-            let window_size = (self.model.max_order() + 1).min(sequence.len());
-            if let Some((likelihood, log_likelihood, information_score, anomaly_strength)) = self
-                .compute_anomaly_metrics_with_ids(
-                    &sequence[..window_size],
-                    &sequence_ids[..window_size],
-                    false,
-                )
-            {
-                if anomaly_strength < threshold {
-                    return Ok(Vec::new());
-                }
-
-                return Ok(vec![AnomalyScore::new_v2(
-                    sequence[..window_size].to_vec(),
-                    likelihood,
-                    log_likelihood,
-                    information_score,
-                    self.model.config(),
-                )]);
-            }
-        }
-
         let window_size = self.model.max_order() + 1;
         let mut anomalies = Vec::with_capacity(sequence.len().saturating_sub(window_size) + 1);
 
@@ -358,7 +282,7 @@ impl AnomalyDetector {
                 self.compute_anomaly_metrics_with_ids(window, window_ids, false)
             {
                 if anomaly_strength >= threshold {
-                    anomalies.push(AnomalyScore::new_v2(
+                    anomalies.push(AnomalyScore::new(
                         window.to_vec(),
                         likelihood,
                         log_likelihood,
@@ -458,7 +382,7 @@ impl AnomalyDetector {
                         self.compute_anomaly_metrics(window, true)
                     {
                         if anomaly_strength >= threshold {
-                            anomalies.push(AnomalyScore::new_v2(
+                            anomalies.push(AnomalyScore::new(
                                 window.to_vec(),
                                 likelihood,
                                 log_likelihood,
@@ -481,7 +405,7 @@ impl AnomalyDetector {
                 self.compute_anomaly_metrics(sequence, true)
             {
                 if anomaly_strength >= threshold {
-                    anomalies.push(AnomalyScore::new_v2(
+                    anomalies.push(AnomalyScore::new(
                         sequence.to_vec(),
                         likelihood,
                         log_likelihood,
@@ -500,7 +424,7 @@ impl AnomalyDetector {
             {
                 // Use the same threshold - no special treatment
                 if anomaly_strength >= threshold {
-                    anomalies.push(AnomalyScore::new_v2(
+                    anomalies.push(AnomalyScore::new(
                         sequence.to_vec(),
                         likelihood,
                         log_likelihood,
@@ -514,227 +438,84 @@ impl AnomalyDetector {
         Ok(anomalies)
     }
 
-    /// Compute anomaly metrics without allocating result storage
+    /// Compute anomaly metrics for a window.
     fn compute_anomaly_metrics(
         &self,
         window: &[String],
-        adaptive: bool,
+        _adaptive: bool,
     ) -> Option<(f64, f64, f64, f64)> {
         if window.len() < 2 {
             return None;
         }
-
-        let likelihood = if adaptive {
-            self.calculate_likelihood_with_fallback(window)
-        } else {
-            self.model.calculate_likelihood(window)
-        };
-
+        let likelihood = self.model.calculate_likelihood(window);
         let log_likelihood = if likelihood > 0.0 {
             likelihood.ln()
         } else {
             f64::NEG_INFINITY
         };
-
-        let information_score = if adaptive {
-            self.calculate_information_score_enhanced(window)
-        } else {
-            self.calculate_information_score(window)
-        };
-
+        let information_score = self.calculate_information_score(window);
         let anomaly_strength = AnomalyScore::calculate_anomaly_strength(
             likelihood,
             information_score,
             self.model.config(),
         );
-
-        Some((
-            likelihood,
-            log_likelihood,
-            information_score,
-            anomaly_strength,
-        ))
+        Some((likelihood, log_likelihood, information_score, anomaly_strength))
     }
 
-    /// Compute anomaly metrics using precomputed StateIds for faster detection
+    /// Compute anomaly metrics using precomputed StateIds.
     fn compute_anomaly_metrics_with_ids(
         &self,
         window: &[String],
         window_ids: &[StateId],
-        adaptive: bool,
+        _adaptive: bool,
     ) -> Option<(f64, f64, f64, f64)> {
         if window.len() < 2 {
             return None;
         }
-
-        let likelihood = if adaptive {
-            // Adaptive path still relies on string-based fallback for unseen sequences
-            self.calculate_likelihood_with_fallback(window)
-        } else {
-            self.model.calculate_likelihood_ids(window_ids, window)
-        };
-
+        let likelihood = self.model.calculate_likelihood_ids(window_ids, window);
         let log_likelihood = if likelihood > 0.0 {
             likelihood.ln()
         } else {
             f64::NEG_INFINITY
         };
-
-        let information_score = if adaptive {
-            self.calculate_information_score_enhanced(window)
-        } else {
-            self.calculate_information_score_ids(window, window_ids)
-        };
-
+        let information_score = self.calculate_information_score_ids(window, window_ids);
         let anomaly_strength = AnomalyScore::calculate_anomaly_strength(
             likelihood,
             information_score,
             self.model.config(),
         );
-
-        Some((
-            likelihood,
-            log_likelihood,
-            information_score,
-            anomaly_strength,
-        ))
+        Some((likelihood, log_likelihood, information_score, anomaly_strength))
     }
 
-    /// Calculate likelihood with fallback for completely unseen sequences
-    fn calculate_likelihood_with_fallback(&self, sequence: &[String]) -> f64 {
-        let base_likelihood = self.model.calculate_likelihood(sequence);
-
-        // If likelihood is zero or very small, use enhanced background probability estimation
-        if base_likelihood <= self.model.config().min_probability {
-            let mut fallback_likelihood = 1.0;
-
-            for i in 1..sequence.len() {
-                let next_state = &sequence[i];
-
-                // Use the richest available context first, then back off
-                let prob = self
-                    .model
-                    .get_best_context_probability(&sequence[..i], next_state);
-
-                // If context probability is zero, use background probability
-                let effective_prob = if prob > 0.0 {
-                    prob
-                } else {
-                    // Enhanced background probability for unseen transitions
-                    let background_prob = self.model.get_background_probability(next_state);
-                    // Make unseen states more anomalous by using lower probability
-                    background_prob * 0.1
-                };
-
-                fallback_likelihood *= effective_prob;
-            }
-
-            // Ensure minimum likelihood for scoring, but allow very small values for anomalies
-            fallback_likelihood.max(self.model.config().min_probability * 0.001)
-        } else {
-            base_likelihood
-        }
-    }
-
-    /// Calculate information-theoretic anomaly score with enhanced handling
-    fn calculate_information_score_enhanced(&self, window: &[String]) -> f64 {
-        let mut total_information = 0.0;
-        let mut count = 0;
-
-        for i in 1..window.len() {
-            let max_context_len = i.min(self.model.max_order());
-
-            // Try different context lengths from longest to shortest
-            for context_len in (1..=max_context_len).rev() {
-                let context = &window[i - context_len..i];
-                let next_state = &window[i];
-
-                let prob = self.model.get_best_context_probability(context, next_state);
-                if prob > 0.0 {
-                    // Information content: I(x) = -log₂(P(x))
-                    total_information += -prob.log2();
-                    count += 1;
-                    break; // Use the first (longest) available context
-                }
-            }
-
-            // If no context found, use background probability
-            if count == i - 1 {
-                // No new count added for this position
-                let background_prob = self.model.get_background_probability(&window[i]);
-                if background_prob > 0.0 {
-                    total_information += -background_prob.log2();
-                    count += 1;
-                }
-            }
-        }
-
-        if count > 0 {
-            total_information / count as f64
-        } else {
-            // Fallback: use maximum information for completely unknown sequences
-            10.0 // High information content for unknown sequences
-        }
-    }
-
-    /// Calculate information-theoretic anomaly score
+    /// Average pointwise information content: mean of −log₂ P(x_i | context).
     fn calculate_information_score(&self, window: &[String]) -> f64 {
-        let mut total_information = 0.0;
-        let mut count = 0;
-
+        let mut total = 0.0;
         for i in 1..window.len() {
-            let max_context_len = i.min(self.model.max_order());
-
-            // Try different context lengths from longest to shortest
-            for context_len in (1..=max_context_len).rev() {
-                let context = &window[i - context_len..i];
-                let next_state = &window[i];
-
-                let prob = self.model.get_best_context_probability(context, next_state);
-                if prob > 0.0 {
-                    // Information content: I(x) = -log₂(P(x))
-                    total_information += -prob.log2();
-                    count += 1;
-                    break; // Use the first (longest) available context
-                }
-            }
+            let prob = self
+                .model
+                .get_best_context_probability(&window[..i], &window[i]);
+            total += -prob.log2();
         }
-
-        if count > 0 {
-            total_information / count as f64
+        if window.len() > 1 {
+            total / (window.len() - 1) as f64
         } else {
             0.0
         }
     }
 
-    /// Calculate information-theoretic anomaly score using StateIds
+    /// Information score using precomputed StateIds.
     fn calculate_information_score_ids(&self, window: &[String], window_ids: &[StateId]) -> f64 {
-        let mut total_information = 0.0;
-        let mut count = 0;
-
+        let mut total = 0.0;
         for i in 1..window.len() {
-            let max_context_len = i.min(self.model.max_order());
-            let next_state_id = window_ids[i];
-            let next_state = &window[i];
-
-            for context_len in (1..=max_context_len).rev() {
-                let context_ids = &window_ids[i - context_len..i];
-
-                let prob = self.model.get_best_context_probability_ids(
-                    context_ids,
-                    next_state_id,
-                    next_state,
-                );
-                if prob > 0.0 {
-                    total_information += -prob.log2();
-                    count += 1;
-                    break;
-                }
-            }
+            let prob = self.model.get_best_context_probability_ids(
+                &window_ids[..i],
+                window_ids[i],
+                &window[i],
+            );
+            total += -prob.log2();
         }
-
-        if count > 0 {
-            total_information / count as f64
+        if window.len() > 1 {
+            total / (window.len() - 1) as f64
         } else {
             0.0
         }

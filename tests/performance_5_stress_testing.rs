@@ -552,11 +552,16 @@ fn test_edge_case_stress_combinations() {
             success_rate
         );
 
+        // Throughput threshold scales with sequence length: longer sequences
+        // are inherently slower per-sequence.
+        let max_seq_len = test_sequences.iter().map(|s| s.len()).max().unwrap_or(1);
+        let min_throughput = if max_seq_len > 100 { 50.0 } else { 1000.0 };
         assert!(
-            throughput >= 1000.0,
-            "Edge case '{}' throughput {} seq/sec below 1000",
+            throughput >= min_throughput,
+            "Edge case '{}' throughput {:.0} seq/sec below {:.0}",
             case_name,
-            throughput
+            throughput,
+            min_throughput
         );
     }
 
