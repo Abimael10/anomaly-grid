@@ -182,4 +182,4 @@ cargo run --release --example protein_folding_sequences
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENCE](LICENCE).
