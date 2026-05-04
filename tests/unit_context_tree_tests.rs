@@ -312,13 +312,12 @@ fn test_context_statistics() {
     assert!(stats.total_contexts > 0, "Should have contexts");
     assert!(stats.total_transitions > 0, "Should have transitions");
     assert!(
-        stats.avg_entropy >= 0.0,
-        "Average entropy should be non-negative"
+        stats.avg_frequency > 0.0,
+        "Average frequency should be positive when contexts exist"
     );
-    assert!(
-        stats.max_entropy >= stats.avg_entropy,
-        "Max entropy should be >= average"
-    );
+    // contexts_by_order should cover order 1 and 2 for max_order=2
+    assert!(stats.contexts_by_order.contains_key(&1));
+    assert!(stats.contexts_by_order.contains_key(&2));
 }
 
 #[test]

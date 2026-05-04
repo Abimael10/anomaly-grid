@@ -166,6 +166,7 @@ impl Iterator for TransitionCountsIter<'_> {
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used)]
 mod tests {
     use super::*;
     use crate::string_interner::StateId;

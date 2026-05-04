@@ -1,19 +1,18 @@
-//! Single-ownership string interning.
+//! Crate-internal string interner.
 //!
-//! The interner stores each unique string **once** on the heap as an
-//! [`Arc<str>`]. Lookup and reverse-lookup share that allocation, so the
-//! byte payload is never duplicated. Interior mutability is via
-//! [`RwLock`] so that [`AnomalyDetector`] can remain `Send + Sync`
-//! without any unsafe code. The interner never panics while holding the
-//! lock, so poisoning is recovered from in place instead of propagating.
-//!
-//! [`AnomalyDetector`]: crate::anomaly_detector::AnomalyDetector
+//! Each unique string is stored **once** as an `Arc<str>` shared
+//! between the forward `Vec<Arc<str>>` and reverse `HashMap<Arc<str>,
+//! StateId>` maps, so the byte payload is never duplicated. Interior
+//! mutability is via `RwLock` so [`crate::AnomalyDetector`] stays
+//! `Send + Sync` without any `unsafe`. The interner never panics while
+//! holding the lock, so poisoning is recovered in place rather than
+//! propagated.
+
+#![allow(clippy::expect_used)] // SAFETY: poison recovery is the idiomatic pattern below.
 
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::{Arc, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
-
-use crate::error::{AnomalyGridError, AnomalyGridResult};
 
 /// Compact identifier for an interned string.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -57,15 +56,21 @@ impl StringInterner {
     }
 
     fn read_inner(&self) -> RwLockReadGuard<'_, InternerInner> {
+        // SAFETY: poison recovery — interner state is consistent post-panic.
         self.inner.read().unwrap_or_else(PoisonError::into_inner)
     }
 
     fn write_inner(&self) -> RwLockWriteGuard<'_, InternerInner> {
+        // SAFETY: poison recovery — interner state is consistent post-panic.
         self.inner.write().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// Intern a string, returning its [`StateId`]. If the string is
     /// already interned the existing id is returned.
+    ///
+    /// Saturating semantics: if the alphabet would exceed `u32::MAX`,
+    /// returns `StateId(u32::MAX)`. The detection path ignores ids it
+    /// cannot resolve, so this degrades gracefully rather than panicking.
     pub fn get_or_intern(&self, s: &str) -> StateId {
         {
             let guard = self.read_inner();
@@ -86,30 +91,6 @@ impl StringInterner {
         id
     }
 
-    /// Intern a string, erroring if the alphabet would overflow `u32`.
-    #[allow(clippy::significant_drop_tightening)]
-    pub fn try_intern(&self, s: &str) -> AnomalyGridResult<StateId> {
-        {
-            let guard = self.read_inner();
-            if let Some(id) = guard.lookup.get(s).copied() {
-                return Ok(id);
-            }
-        }
-
-        let mut inner = self.write_inner();
-        if let Some(&id) = inner.lookup.get(s) {
-            return Ok(id);
-        }
-
-        let next = u32::try_from(inner.storage.len())
-            .map_err(|_| AnomalyGridError::Internal("alphabet exceeded u32::MAX"))?;
-        let id = StateId::new(next);
-        let key: Arc<str> = Arc::from(s);
-        inner.storage.push(Arc::clone(&key));
-        inner.lookup.insert(key, id);
-        Ok(id)
-    }
-
     /// Resolve an id back to an owned `String`. Returns `None` if the id
     /// was not produced by this interner.
     pub fn get_string(&self, id: StateId) -> Option<String> {
@@ -119,74 +100,19 @@ impl StringInterner {
             .map(ToString::to_string)
     }
 
-    /// Resolve an id back to a shared `Arc<str>`.
-    pub fn get_arc(&self, id: StateId) -> Option<Arc<str>> {
-        self.read_inner().storage.get(id.index()).cloned()
-    }
-
     pub fn len(&self) -> usize {
         self.read_inner().storage.len()
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.read_inner().storage.is_empty()
-    }
-
-    /// Snapshot of all (id, string) pairs. Order matches insertion order.
+    /// Snapshot of all `(id, string)` pairs in insertion order.
     pub fn entries(&self) -> Vec<(StateId, String)> {
-        let inner = self.read_inner();
-        inner
+        self.read_inner()
             .storage
             .iter()
             .enumerate()
             .map(|(i, s)| (StateId::new(i as u32), s.to_string()))
             .collect()
     }
-
-    /// Bytes held by the interner, including [`Arc`] headers.
-    pub fn estimate_memory_usage(&self) -> usize {
-        let inner = self.read_inner();
-        let arc_header_bytes = 3 * std::mem::size_of::<usize>();
-        let payload: usize = inner.storage.iter().map(|s| s.len() + arc_header_bytes).sum();
-        let storage_vec = inner.storage.capacity() * std::mem::size_of::<Arc<str>>();
-        let lookup_map = inner.lookup.capacity()
-            * (std::mem::size_of::<Arc<str>>() + std::mem::size_of::<StateId>());
-        let result = payload + storage_vec + lookup_map;
-        drop(inner);
-        result
-    }
-}
-
-/// Helper trait for converting strings and ids through an interner.
-pub trait StateIdConversion {
-    fn to_state_id(&self, interner: &StringInterner) -> StateId;
-    fn from_state_id(id: StateId, interner: &StringInterner) -> Option<String>;
-}
-
-impl StateIdConversion for str {
-    fn to_state_id(&self, interner: &StringInterner) -> StateId {
-        interner.get_or_intern(self)
-    }
-    fn from_state_id(id: StateId, interner: &StringInterner) -> Option<String> {
-        interner.get_string(id)
-    }
-}
-
-impl StateIdConversion for String {
-    fn to_state_id(&self, interner: &StringInterner) -> StateId {
-        interner.get_or_intern(self)
-    }
-    fn from_state_id(id: StateId, interner: &StringInterner) -> Option<String> {
-        interner.get_string(id)
-    }
-}
-
-pub fn strings_to_state_ids(strings: &[String], interner: &StringInterner) -> Vec<StateId> {
-    strings.iter().map(|s| interner.get_or_intern(s)).collect()
-}
-
-pub fn state_ids_to_strings(ids: &[StateId], interner: &StringInterner) -> Option<Vec<String>> {
-    ids.iter().map(|&id| interner.get_string(id)).collect()
 }
 
 #[cfg(test)]
@@ -236,17 +162,8 @@ mod tests {
     }
 
     #[test]
-    fn conversion_helpers() {
-        let interner = StringInterner::new();
-        let strings = vec!["A".to_string(), "B".to_string(), "C".to_string()];
-        let ids = strings_to_state_ids(&strings, &interner);
-        let back = state_ids_to_strings(&ids, &interner).expect("roundtrip");
-        assert_eq!(strings, back);
-    }
-
-    #[test]
     fn interner_is_send_and_sync() {
-        fn assert_send_sync<T: Send + Sync>() {}
+        const fn assert_send_sync<T: Send + Sync>() {}
         assert_send_sync::<StringInterner>();
     }
 }

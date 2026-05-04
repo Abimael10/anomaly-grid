@@ -144,7 +144,7 @@ fn generate_fold(rng: &mut StdRng, len_range: std::ops::Range<usize>) -> Vec<Str
     seq
 }
 
-fn introduce_misfold(rng: &mut StdRng, seq: &mut Vec<String>) {
+fn introduce_misfold(rng: &mut StdRng, seq: &mut [String]) {
     if seq.len() < 30 {
         return;
     }
@@ -158,9 +158,9 @@ fn introduce_misfold(rng: &mut StdRng, seq: &mut Vec<String>) {
         }
         1 => {
             // Break disulfide
-            for i in 0..seq.len() {
-                if seq[i] == "C" {
-                    seq[i] = ["S", "T", "A"].choose(rng).unwrap().to_string();
+            for residue in seq.iter_mut() {
+                if residue == "C" {
+                    *residue = ["S", "T", "A"].choose(rng).unwrap().to_string();
                     break;
                 }
             }

@@ -1,5 +1,23 @@
-#![deny(clippy::pedantic, clippy::nursery, clippy::unwrap_used)]
-#![allow(clippy::module_name_repetitions, clippy::missing_errors_doc, clippy::missing_panics_doc, clippy::must_use_candidate, clippy::return_self_not_must_use, clippy::missing_const_for_fn, clippy::cast_precision_loss, clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_lossless, clippy::cast_possible_wrap, clippy::doc_markdown)]
+#![deny(
+    clippy::pedantic,
+    clippy::nursery,
+    clippy::unwrap_used,
+    clippy::expect_used
+)]
+#![allow(
+    clippy::module_name_repetitions,
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    clippy::must_use_candidate,
+    clippy::return_self_not_must_use,
+    clippy::missing_const_for_fn,
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::cast_lossless,
+    clippy::cast_possible_wrap,
+    clippy::doc_markdown
+)]
 
 //! Anomaly Grid - Sequential Pattern Analysis Library
 //!
@@ -11,8 +29,8 @@
 //!
 //! # Features
 //!
-//! - **Variable-Order Markov Models**: Hierarchical context selection with Laplace smoothing
-//! - **Information Theory**: Shannon entropy, KL divergence  
+//! - **Variable-Order Markov Models**: Hierarchical context selection with Witten-Bell interpolation
+//! - **Information Theory**: Shannon entropy, KL divergence
 //! - **Hierarchical Context Selection**: Automatic fallback from longer to shorter contexts
 //! - **Parallel Processing**: Batch analysis using Rayon for multiple sequences
 //!
@@ -22,7 +40,6 @@
 //! use anomaly_grid::*;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! // Create and train detector
 //! let mut detector = AnomalyDetector::new(3)?;
 //! let normal_sequence = vec![
 //!     "A".to_string(), "B".to_string(), "C".to_string(),
@@ -30,49 +47,35 @@
 //! ];
 //! detector.train(&normal_sequence)?;
 //!
-//! // Detect anomalies
 //! let test_sequence = vec![
 //!     "A".to_string(), "X".to_string(), "Y".to_string(),
 //! ];
 //! let anomalies = detector.detect_anomalies(&test_sequence, 0.1)?;
-//!
 //! for anomaly in anomalies {
-//!     println!("Anomaly: {:?}, Likelihood: {:.6}",
-//!              anomaly.sequence, anomaly.likelihood);
+//!     println!("anomaly {:?}", anomaly.sequence);
 //! }
-//! # Ok(())
-//! # }
+//! # Ok(()) }
 //! ```
 //!
 //! # Architecture
 //!
-//! The library is organized into three main modules:
-//!
-//! - [`context_tree`]: Context storage and probability estimation
-//! - [`markov_model`]: Variable-order Markov chain implementation  
-//! - [`anomaly_detector`]: Anomaly detection using Markov models
-//!
-//! # Use Cases
-//!
-//! - **Network Security**: Detecting unusual protocol sequences and attack patterns
-//! - **User Behavior Analysis**: Identifying privilege escalation and suspicious activities
-//! - **Financial Fraud**: Detecting unusual transaction patterns and velocity attacks
-//! - **System Monitoring**: Identifying anomalous log sequences and security incidents
-//! - **Bioinformatics**: Detecting mutations and unusual genetic sequences
+//! - [`context_tree`]: context storage and probability estimation
+//! - [`markov_model`]: variable-order Markov chain implementation
+//! - [`anomaly_detector`]: anomaly detection over a trained model
 
 pub mod anomaly_detector;
 pub mod config;
-pub mod constants;
 pub mod context_tree;
-pub mod context_trie;
 pub mod error;
 pub mod markov_model;
 pub mod performance;
-pub mod string_interner;
-pub mod transition_counts;
-pub mod validation;
 
-// Re-export main types for convenience
+pub(crate) mod constants;
+pub(crate) mod context_trie;
+pub(crate) mod string_interner;
+pub(crate) mod transition_counts;
+pub(crate) mod validation;
+
 pub use anomaly_detector::{batch_process_sequences, AnomalyDetector, AnomalyScore};
 pub use config::AnomalyGridConfig;
 pub use context_tree::{ContextNode, ContextTree};
@@ -82,77 +85,54 @@ pub use performance::{
     optimize_context_tree, ContextStatistics, OptimizationConfig, PerformanceMetrics,
 };
 
-/// Library version
+/// Library version string.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
-
-/// Get library information
-pub fn info() -> String {
-    format!("Anomaly Grid v{VERSION} - Markov Chain-based Sequence Anomaly Detection")
-}
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_library_info() {
-        let info = info();
-        assert!(info.contains("Anomaly Grid"));
-        assert!(info.contains(VERSION));
+    fn version_string_matches_cargo() {
+        // VERSION is `env!("CARGO_PKG_VERSION")`, a compile-time non-empty string.
+        assert!(VERSION.contains('.'));
     }
 
     #[test]
-    fn test_basic_workflow() {
-        let mut detector = AnomalyDetector::new(2).expect("Failed to create detector");
-        let sequence = vec![
-            "A".to_string(),
-            "B".to_string(),
-            "A".to_string(),
-            "B".to_string(),
-        ];
+    fn basic_workflow() -> AnomalyGridResult<()> {
+        let mut detector = AnomalyDetector::new(2)?;
+        let sequence: Vec<String> = ["A", "B", "A", "B"].iter().map(|s| (*s).to_string()).collect();
+        detector.train(&sequence)?;
 
-        // Training should succeed
-        assert!(detector.train(&sequence).is_ok());
-
-        // Detection should work
-        let test_sequence = vec!["A".to_string(), "X".to_string(), "Y".to_string()];
-        let anomalies = detector
-            .detect_anomalies(&test_sequence, 0.5)
-            .expect("Failed to detect anomalies");
-
-        // Should detect some anomalies or handle gracefully
+        let test_sequence: Vec<String> =
+            ["A", "X", "Y"].iter().map(|s| (*s).to_string()).collect();
+        let anomalies = detector.detect_anomalies(&test_sequence, 0.5)?;
         for anomaly in anomalies {
-            assert!(anomaly.likelihood >= 0.0);
-            assert!(anomaly.likelihood <= 1.0);
-            assert!(anomaly.anomaly_strength >= 0.0);
-            assert!(anomaly.anomaly_strength <= 1.0);
+            assert!((0.0..=1.0).contains(&anomaly.likelihood));
+            assert!((0.0..=1.0).contains(&anomaly.anomaly_strength));
         }
+        Ok(())
     }
 
     #[test]
-    fn test_module_integration() {
-        // Test that all modules work together
-        let mut tree = ContextTree::new(2).expect("Failed to create context tree");
-        let sequence = vec!["A".to_string(), "B".to_string(), "C".to_string()];
+    fn module_integration() -> AnomalyGridResult<()> {
+        let mut tree = ContextTree::new(2)?;
+        let sequence: Vec<String> = ["A", "B", "C"].iter().map(|s| (*s).to_string()).collect();
         let config = AnomalyGridConfig::default();
 
-        assert!(tree.build_from_sequence(&sequence, &config).is_ok());
+        tree.build_from_sequence(&sequence, &config)?;
         assert!(tree.context_count() > 0);
 
-        let mut model = MarkovModel::new(2).expect("Failed to create Markov model");
-        assert!(model.train(&sequence).is_ok());
-
+        let mut model = MarkovModel::new(2)?;
+        model.train(&sequence)?;
         let likelihood = model.calculate_likelihood(&sequence);
         assert!(likelihood > 0.0);
         assert!(likelihood <= 1.0);
 
-        let mut detector = AnomalyDetector::new(2).expect("Failed to create detector");
-        assert!(detector.train(&sequence).is_ok());
-
-        let anomalies = detector
-            .detect_anomalies(&sequence, 0.1)
-            .expect("Failed to detect anomalies");
-        // Normal sequence should have few anomalies
+        let mut detector = AnomalyDetector::new(2)?;
+        detector.train(&sequence)?;
+        let anomalies = detector.detect_anomalies(&sequence, 0.1)?;
         assert!(anomalies.len() <= 1);
+        Ok(())
     }
 }

@@ -29,13 +29,13 @@ proptest! {
         tree.build_from_sequence(&seq, &config).expect("build");
 
         let gv = tree.global_vocab_size();
+        let alphabet = tree.alphabet();
 
         for (_, node) in tree.contexts() {
             // Sum smoothed probability over *every* symbol in the global alphabet
-            let entries = tree.interner().entries();
-            let total: f64 = entries
+            let total: f64 = alphabet
                 .iter()
-                .map(|(_, s)| node.get_probability(s, &config, gv))
+                .map(|s| node.get_probability(s, &config, gv))
                 .sum();
             // Laplace smoothing: sum should be very close to 1.0
             prop_assert!((total - 1.0).abs() < 1e-9,
