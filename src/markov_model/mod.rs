@@ -156,7 +156,7 @@ impl MarkovModel {
                     let lambda = n / (n + t);
                     let gv = self.context_tree.global_vocab_size();
                     let p_ml = node.get_probability(next_state, &self.config, gv);
-                    prob = lambda * p_ml + (1.0 - lambda) * prob;
+                    prob = lambda.mul_add(p_ml, (1.0 - lambda) * prob);
                 }
             }
         }
@@ -185,7 +185,7 @@ impl MarkovModel {
                     let lambda = n / (n + t);
                     let gv = self.context_tree.global_vocab_size();
                     let p_ml = node.get_probability_by_id(next_state_id, &self.config, gv);
-                    prob = lambda * p_ml + (1.0 - lambda) * prob;
+                    prob = lambda.mul_add(p_ml, (1.0 - lambda) * prob);
                 }
             }
         }
@@ -298,7 +298,7 @@ impl MarkovModel {
         }
         let raw_count = self.state_counts.get(state).copied().unwrap_or(0) as f64;
         let smoothed = (raw_count + self.config.smoothing_alpha)
-            / (self.total_tokens as f64 + self.config.smoothing_alpha * gv);
+            / self.config.smoothing_alpha.mul_add(gv, self.total_tokens as f64);
         smoothed.max(self.config.min_probability)
     }
 
@@ -306,7 +306,7 @@ impl MarkovModel {
     pub fn get_background_probability(&self, _state: &str) -> f64 {
         let gv = self.context_tree.global_vocab_size().max(1) as f64;
         let bg = self.config.smoothing_alpha
-            / (self.total_tokens as f64 + self.config.smoothing_alpha * gv);
+            / self.config.smoothing_alpha.mul_add(gv, self.total_tokens as f64);
         bg.max(self.config.min_probability)
     }
 }

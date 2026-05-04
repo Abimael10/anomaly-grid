@@ -212,25 +212,20 @@ impl ContextTrie {
                 current_node.get_child(state)
             };
 
-            current_id = if let Some(existing_id) = next_id {
-                existing_id
-            } else {
-                // Create new child node
-                let new_id = self.allocate_node_id();
-
-                // Set up the new node
-                if let Some(new_node) = self.get_node_mut(new_id) {
-                    new_node.parent = Some(current_id);
-                    new_node.state_from_parent = Some(state);
-                }
-
-                // Add child to current node
-                if let Some(current_node) = self.get_node_mut(current_id) {
-                    current_node.add_child(state, new_id);
-                }
-
-                new_id
-            };
+            current_id = next_id.map_or_else(
+                || {
+                    let new_id = self.allocate_node_id();
+                    if let Some(new_node) = self.get_node_mut(new_id) {
+                        new_node.parent = Some(current_id);
+                        new_node.state_from_parent = Some(state);
+                    }
+                    if let Some(current_node) = self.get_node_mut(current_id) {
+                        current_node.add_child(state, new_id);
+                    }
+                    new_id
+                },
+                |existing_id| existing_id,
+            );
         }
 
         current_id
@@ -458,8 +453,7 @@ mod tests {
         trie.set_context_data(&context2, data2);
 
         // Iterate and count
-        let contexts: Vec<_> = trie.iter_contexts().collect();
-        assert_eq!(contexts.len(), 2);
+        assert_eq!(trie.iter_contexts().count(), 2);
 
         // Verify context count
         assert_eq!(trie.context_count(), 2);

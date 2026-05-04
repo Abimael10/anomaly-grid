@@ -1,5 +1,5 @@
 #![deny(clippy::pedantic, clippy::nursery, clippy::unwrap_used)]
-#![allow(clippy::module_name_repetitions, clippy::missing_errors_doc, clippy::missing_panics_doc, clippy::must_use_candidate, clippy::return_self_not_must_use, clippy::missing_const_for_fn, clippy::cast_precision_loss, clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_lossless, clippy::cast_possible_wrap)]
+#![allow(clippy::module_name_repetitions, clippy::missing_errors_doc, clippy::missing_panics_doc, clippy::must_use_candidate, clippy::return_self_not_must_use, clippy::missing_const_for_fn, clippy::cast_precision_loss, clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_lossless, clippy::cast_possible_wrap, clippy::doc_markdown)]
 
 //! Anomaly Grid - Sequential Pattern Analysis Library
 //!

@@ -34,8 +34,7 @@ impl TransitionCounts {
             Self::Small(vec) => vec
                 .iter()
                 .find(|(id, _)| *id == state_id)
-                .map(|(_, count)| *count)
-                .unwrap_or(0),
+                .map_or(0, |(_, count)| *count),
             Self::Large(map) => map.get(&state_id).copied().unwrap_or(0),
         }
     }
@@ -134,6 +133,15 @@ impl TransitionCounts {
     }
 }
 
+impl<'a> IntoIterator for &'a TransitionCounts {
+    type Item = (StateId, usize);
+    type IntoIter = TransitionCountsIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
 impl Default for TransitionCounts {
     fn default() -> Self {
         Self::new()
@@ -146,7 +154,7 @@ pub enum TransitionCountsIter<'a> {
     Large(std::collections::hash_map::Iter<'a, StateId, usize>),
 }
 
-impl<'a> Iterator for TransitionCountsIter<'a> {
+impl Iterator for TransitionCountsIter<'_> {
     type Item = (StateId, usize);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -233,12 +241,12 @@ mod tests {
         let state_1_count = collected
             .iter()
             .find(|(id, _)| *id == StateId::new(1))
-            .unwrap()
+            .expect("state 1 missing")
             .1;
         let state_2_count = collected
             .iter()
             .find(|(id, _)| *id == StateId::new(2))
-            .unwrap()
+            .expect("state 2 missing")
             .1;
 
         assert_eq!(state_1_count, 2);

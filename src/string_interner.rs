@@ -67,8 +67,11 @@ impl StringInterner {
     /// Intern a string, returning its [`StateId`]. If the string is
     /// already interned the existing id is returned.
     pub fn get_or_intern(&self, s: &str) -> StateId {
-        if let Some(id) = self.read_inner().lookup.get(s).copied() {
-            return id;
+        {
+            let guard = self.read_inner();
+            if let Some(id) = guard.lookup.get(s).copied() {
+                return id;
+            }
         }
 
         let mut inner = self.write_inner();
@@ -84,9 +87,13 @@ impl StringInterner {
     }
 
     /// Intern a string, erroring if the alphabet would overflow `u32`.
+    #[allow(clippy::significant_drop_tightening)]
     pub fn try_intern(&self, s: &str) -> AnomalyGridResult<StateId> {
-        if let Some(id) = self.read_inner().lookup.get(s).copied() {
-            return Ok(id);
+        {
+            let guard = self.read_inner();
+            if let Some(id) = guard.lookup.get(s).copied() {
+                return Ok(id);
+            }
         }
 
         let mut inner = self.write_inner();
@@ -109,12 +116,12 @@ impl StringInterner {
         self.read_inner()
             .storage
             .get(id.index())
-            .map(|s| s.to_string())
+            .map(ToString::to_string)
     }
 
     /// Resolve an id back to a shared `Arc<str>`.
     pub fn get_arc(&self, id: StateId) -> Option<Arc<str>> {
-        self.read_inner().storage.get(id.index()).map(Arc::clone)
+        self.read_inner().storage.get(id.index()).cloned()
     }
 
     pub fn len(&self) -> usize {
@@ -126,7 +133,7 @@ impl StringInterner {
     }
 
     /// Snapshot of all (id, string) pairs. Order matches insertion order.
-    pub fn iter(&self) -> Vec<(StateId, String)> {
+    pub fn entries(&self) -> Vec<(StateId, String)> {
         let inner = self.read_inner();
         inner
             .storage
@@ -139,13 +146,14 @@ impl StringInterner {
     /// Bytes held by the interner, including [`Arc`] headers.
     pub fn estimate_memory_usage(&self) -> usize {
         let inner = self.read_inner();
-        // Arc<str> header (strong + weak counts + len) ~= 3 usize; payload = bytes.
         let arc_header_bytes = 3 * std::mem::size_of::<usize>();
         let payload: usize = inner.storage.iter().map(|s| s.len() + arc_header_bytes).sum();
         let storage_vec = inner.storage.capacity() * std::mem::size_of::<Arc<str>>();
         let lookup_map = inner.lookup.capacity()
             * (std::mem::size_of::<Arc<str>>() + std::mem::size_of::<StateId>());
-        payload + storage_vec + lookup_map
+        let result = payload + storage_vec + lookup_map;
+        drop(inner);
+        result
     }
 }
 

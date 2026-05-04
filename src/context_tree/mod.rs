@@ -114,7 +114,7 @@ impl ContextNode {
         }
         let count = self.get_count_by_id(state_id) as f64;
         (count + config.smoothing_alpha)
-            / (self.total_count as f64 + config.smoothing_alpha * v)
+            / config.smoothing_alpha.mul_add(v, self.total_count as f64)
     }
 
     // ── information-theoretic measures ─────────────────────────────────
@@ -343,14 +343,14 @@ impl ContextTree {
     /// Get the total count for a given context (for adaptive context selection)
     pub fn get_context_count(&self, context: &[String]) -> Option<usize> {
         self.get_context_node(context)
-            .map(|node| node.total_count())
+            .map(ContextNode::total_count)
     }
 
     /// Get the total count for a given context by StateIds
     pub fn get_context_count_by_ids(&self, context_ids: &[StateId]) -> Option<usize> {
         self.trie
             .get_context_data(context_ids)
-            .map(|node| node.total_count())
+            .map(ContextNode::total_count)
     }
 
     /// Get all contexts of a specific order

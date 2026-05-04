@@ -4,7 +4,7 @@
 //! Markov models with information-theoretic scoring.
 
 use crate::config::AnomalyGridConfig;
-use crate::constants::validation::*;
+use crate::constants::validation::{MAX_THRESHOLD, MIN_THRESHOLD};
 use crate::error::{AnomalyGridError, AnomalyGridResult};
 use crate::markov_model::MarkovModel;
 use crate::performance::{optimize_context_tree, OptimizationConfig, PerformanceMetrics};
@@ -196,7 +196,7 @@ impl AnomalyDetector {
                         &format!("sequence {i} failed"),
                         &format!("valid sequence: {e}"),
                     )
-                })?
+                })?;
         }
 
         // Update performance metrics
@@ -359,7 +359,7 @@ impl AnomalyDetector {
         self.model.context_tree().get_context_statistics()
     }
 
-    /// Detect anomalies with adaptive order for short sequences
+    #[allow(clippy::unnecessary_wraps)]
     fn detect_with_adaptive_order(
         &self,
         sequence: &[String],
@@ -554,15 +554,16 @@ pub fn batch_process_sequences(
                 return Vec::new();
             }
 
-            match AnomalyDetector::with_config(config.clone()) {
-                Ok(mut detector) => match detector.train(sequence) {
-                    Ok(()) => detector
-                        .detect_anomalies(sequence, threshold)
-                        .unwrap_or_default(),
-                    Err(_) => Vec::new(),
+            AnomalyDetector::with_config(config.clone()).map_or_else(
+                |_| Vec::new(),
+                |mut detector| {
+                    detector
+                        .train(sequence)
+                        .ok()
+                        .and_then(|()| detector.detect_anomalies(sequence, threshold).ok())
+                        .unwrap_or_default()
                 },
-                Err(_) => Vec::new(),
-            }
+            )
         })
         .collect();
 

@@ -300,9 +300,8 @@ pub fn optimize_context_tree(
         }
 
         // Apply maximum context limit
-        if let Some(_max_contexts) = config.max_contexts {
-            // TODO: Implement context limiting for trie-based storage
-            tree.limit_context_count(_max_contexts);
+        if let Some(max_contexts) = config.max_contexts {
+            tree.limit_context_count(max_contexts);
         }
     }
 
@@ -329,9 +328,9 @@ mod tests {
 
         // Test throughput calculations
         // 1000 elements / 0.1 seconds = 10,000 elements/second
-        assert_eq!(metrics.training_throughput(1000), 10000.0);
+        assert!((metrics.training_throughput(1000) - 10_000.0).abs() < f64::EPSILON);
         // 500 elements / 0.05 seconds = 10,000 elements/second
-        assert_eq!(metrics.detection_throughput(500), 10000.0);
+        assert!((metrics.detection_throughput(500) - 10_000.0).abs() < f64::EPSILON);
     }
 
     #[test]

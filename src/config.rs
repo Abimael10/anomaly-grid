@@ -263,12 +263,7 @@ impl AnomalyGridConfig {
             total_contexts += alphabet_size.pow(order as u32);
         }
 
-        // Apply memory limit if set
-        if let Some(limit) = self.memory_limit {
-            total_contexts.min(limit)
-        } else {
-            total_contexts
-        }
+        self.memory_limit.map_or(total_contexts, |limit| total_contexts.min(limit))
     }
 
     /// Check if configuration is suitable for given alphabet size
@@ -280,10 +275,7 @@ impl AnomalyGridConfig {
         }
 
         // Consider suitable if actual contexts fit within limits
-        match self.memory_limit {
-            Some(limit) => actual_contexts <= limit,
-            None => actual_contexts <= 10_000_000, // Reasonable default
-        }
+        self.memory_limit.map_or(actual_contexts <= 10_000_000, |limit| actual_contexts <= limit)
     }
 }
 
@@ -296,7 +288,7 @@ mod tests {
         let config = AnomalyGridConfig::default();
         assert!(config.validate().is_ok());
         assert_eq!(config.max_order, 3);
-        assert_eq!(config.smoothing_alpha, 1.0);
+        assert!((config.smoothing_alpha - 1.0).abs() < f64::EPSILON);
         assert_eq!(config.memory_limit, Some(1_000_000));
     }
 
@@ -343,7 +335,7 @@ mod tests {
         // Test with memory limit
         let config_limited = AnomalyGridConfig::default()
             .with_memory_limit(Some(10))
-            .unwrap();
+            .expect("valid memory limit");
         let estimated_limited = config_limited.estimate_memory_usage(2);
         assert_eq!(estimated_limited, 10); // Capped by limit
     }
