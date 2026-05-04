@@ -112,10 +112,10 @@ both four-grams that touch them break above the threshold.
 
 ```rust
 let config = AnomalyGridConfig::default()
-    .with_max_order(4)?                    // Higher order = more memory, better accuracy
-    .with_smoothing_alpha(0.5)?            // Lower = more sensitive to training data
-    .with_weights(0.8, 0.2)?               // Likelihood vs information weight
-    .with_memory_limit(Some(100 * 1024 * 1024))?; // 100MB memory limit
+    .with_max_order(4)?              // Higher order = longer context, more memory
+    .with_smoothing_alpha(0.5)?      // Lower = more sensitive to training data
+    .with_weights(0.8, 0.2)?         // (likelihood + information) — must sum to 1.0
+    .with_memory_limit(Some(100_000))?; // Cap at 100k context nodes (default: 1_000_000)
 
 let detector = AnomalyDetector::with_config(config)?;
 ```

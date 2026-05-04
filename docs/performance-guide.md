@@ -10,11 +10,14 @@ chosen `max_order` and the alphabet size of the corpus.
 |---|---|---|---|
 | `max_order` | 2 | 3 | 5 |
 | `smoothing_alpha` | 1.0 | 1.0 | 0.1 (less smoothing → more sensitive) |
-| `memory_limit` | `Some(50 * 1024 * 1024)` | `Some(1_000_000)` (contexts) | `None` |
+| `memory_limit` | `Some(10_000)` | `Some(1_000_000)` | `None` |
 
-Memory grows roughly as `Σ_{k=1..max_order} |alphabet|^k` worst-case;
-typical usage is far below the bound because most context combinations
-never appear during training.
+`memory_limit` caps the number of *context nodes* in the trie (not
+bytes); training errors with `MemoryLimitExceeded` once the cap is
+reached. Memory grows roughly as
+`Σ_{k=1..max_order} |alphabet|^k` worst-case; typical usage is far
+below the bound because most context combinations never appear during
+training.
 
 ## Pre-built configuration helpers
 
