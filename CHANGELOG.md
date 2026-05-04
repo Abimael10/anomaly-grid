@@ -22,11 +22,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the floor.
 - Property tests for empty / length-1 / single-symbol-alphabet /
   Unicode / 1k-symbol sequences and **parallel batch determinism**
-  (`tests/proptest_invariants.rs`).
-- `tests/concurrency_invariants.rs`: static `Send + Sync` assertions
-  plus deterministic-across-thread-pool-sizes test.
+  (`tests/proptest.rs`).
+- `tests/concurrency.rs`: static `Send + Sync` assertions plus
+  deterministic-across-thread-pool-sizes test.
 - `clippy::expect_used` and `missing_docs` are now denied at the crate
   root in addition to `pedantic`, `nursery`, and `unwrap_used`.
+- Shared test fixtures in `tests/common/mod.rs` (`s()`, `trained()`,
+  `pattern_abc()`, `max_strength()`).
 
 ### Changed
 - **BREAKING**: `batch_process_sequences(seqs, config, threshold)` is
@@ -78,9 +80,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `total_count`).
 - `ContextStatistics` fields that were never populated (`total_entropy`,
   `avg_entropy`, `min_*`, `max_*`, `transitions_by_context`).
-- `std::thread::sleep(10ms)` in
-  `tests/performance_5_stress_testing.rs` — made the test time-sensitive
-  on slow runners.
+- `std::thread::sleep(10ms)` in the stress-test loop — made the test
+  time-sensitive on slow runners.
+- Custom `DomainTestResult` scaffolding and verbose `println!` blocks
+  from the audit/domain test suite — replaced with idiomatic
+  per-property `#[test] fn`s.
+
+### Test layout
+- Test files renamed from numbered `domain_N_*` / `unit_*_tests` /
+  `integration_*_tests` / `performance_N_*` / `*_invariants` /
+  `regression_anomaly_grid` to feature-named files: `api.rs`,
+  `math.rs`, `detection.rs`, `sequences.rs`, `workflow.rs`,
+  `errors.rs`, `concurrency.rs`, `proptest.rs`, `regression.rs`, and
+  `perf_{training,detection,memory,batch,stress}.rs`.
+- Shared fixtures live in `tests/common/mod.rs` (idiomatic Rust-library
+  layout: cargo recognises the directory as a module rather than a
+  separate test binary).
+
+### Docs
+- `docs/api-reference.md`, `docs/mathematical-implementation.md`,
+  `docs/performance-guide.md`, `docs/README.md` rewritten to match
+  v0.6 (Witten-Bell, `batch_score`, bits-only score). Stale references
+  to `MemoryPool`, `TrainingDataAnalysis`,
+  `analyze_training_data_characteristics`, and
+  `batch_process_sequences` removed.
+- Root README testing section updated to the new test layout.
 
 ### Fixed
 - Anomaly strength now combines surprise (bits) with information
