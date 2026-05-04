@@ -120,29 +120,49 @@ let config = AnomalyGridConfig::default()
 let detector = AnomalyDetector::with_config(config)?;
 ```
 
-## Use Cases (with context)
+## Use cases
 
-Markov chains **are not state of the art** for anomaly detection. Modern systems favor deep sequence, probabilistic, and graph-based models. This library remains useful when you need:
-- Discrete, low-dimensional states with short contexts.
-- Predictable workflows where interpretability matters.
-- Ultra-low-latency or resource-constrained inference.
+`anomaly-grid` is a fit when your data is a **sequence of discrete
+tokens over a finite alphabet** and you have a corpus of known-normal
+examples to train on. The detector flags windows whose Markov
+likelihood under that corpus drops sharply — locally improbable
+*transitions*, even when each individual token is legitimate.
 
-### Practical fits
-- **Network/Protocol flows**: Finite state machines, handshake/order violations.
-- **Small structured workflows**: Ops runbooks, CLI/session macros, simple ETL steps.
-- **Device/state telemetry**: Low-cardinality IoT states, embedded controllers.
+### Concrete fits
 
-### Not a fit without heavy preprocessing
-- High-dimensional logs/sensors or complex user behavior with long-range dependencies.
-- Large alphabets or non-stationary patterns.
-- Continuous/unstructured data (images, audio, raw text) without discretization.
+- **Protocol / state-machine traces** — TCP session states,
+  application handshakes, consensus rounds. Catches sessions that
+  skip handshake steps, hit illegal transitions, or reset mid-stream.
+  See [`examples/network_protocol_analysis.rs`](examples/network_protocol_analysis.rs)
+  (16-state TCP-like flow).
 
-### Current state-of-the-art alternatives
-- **Deep sequence models**: LSTM/GRU, Transformers (TFT, Anomaly Transformer, TS foundation models), autoencoders/VAEs.
-- **Probabilistic deep models**: Normalizing flows, diffusion, energy-based models.
-- **Graph/representation learning**: GNNs, dynamic graph embeddings, contrastive methods.
-- **Classical statistical baselines**: HMMs (strong Markovian baseline), GMMs/Bayesian changepoint, ARIMA/VAR/Kalman for continuous signals.
-- **TS foundation models (2023–2025)**: TimeGPT, Chronos, MOIRAI, DeepTime.
+- **System-call / audit-log monitoring** — `open → read → close`,
+  `socket → connect → send`. Surfaces fileless malware, shell escapes,
+  and privilege-escalation patterns whose individual syscalls are
+  legitimate but whose *order* isn't. The quick-start above is a
+  minimal version of this.
+
+- **Operational workflows** — runbook steps, CI pipeline ordering,
+  CLI session macros. Deviation from the canonical sequence is itself
+  the signal. See [`examples/communication_protocol_analysis.rs`](examples/communication_protocol_analysis.rs)
+  (12-symbol comms protocol with injected attacks).
+
+- **Bioinformatics motif scanning** — codon triplets in a known
+  reading frame, residue patterns in a curated taxon. Frameshifts
+  and rare splice variants surface as low-likelihood windows. See
+  [`examples/protein_folding_sequences.rs`](examples/protein_folding_sequences.rs)
+  (20-residue alphabet).
+
+### Where it doesn't fit
+
+- Continuous or high-dimensional data (images, raw audio, dense
+  feature vectors) without discretisation.
+- Alphabets above ~1000 symbols at high `max_order` — context-tree
+  memory grows as `|Σ|^max_order`.
+- Long-range dependencies beyond 4–5 tokens. If the signal lives in
+  context spans of dozens of tokens, prefer a Transformer-based
+  sequence model (TFT, Anomaly Transformer) or an HMM with explicit
+  hidden state.
 
 ## Testing
 
