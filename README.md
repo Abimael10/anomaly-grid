@@ -22,46 +22,66 @@ A Rust library implementing variable-order Markov chains with **Witten-Bell inte
 anomaly-grid = "0.6"
 ```
 
-### Train once, score many in parallel
+### Catch a privilege-escalation attack in user sessions
+
+Train on benign user sessions, then scan unknown sessions in parallel
+and surface only the windows that exceed your tolerance.
 
 ```rust
 use anomaly_grid::{AnomalyDetector, batch_score};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let s = |w: &[&str]| -> Vec<String> { w.iter().map(|x| x.to_string()).collect() };
+
+    // 30 benign sessions, three legitimate workflow shapes.
     let mut detector = AnomalyDetector::new(3)?;
-
-    // Train on a corpus of *known-normal* sequences (a fleet of benign
-    // sessions, golden-path traces, etc.).
-    let mut normal_sequence = Vec::new();
+    let mut benign = Vec::new();
     for _ in 0..30 {
-        normal_sequence.extend(["A", "B", "C", "A", "B", "C", "A", "B", "C"].iter().copied());
+        benign.extend(s(&["LOGIN", "AUTH", "READ", "WRITE", "READ", "LOGOUT"]));
+        benign.extend(s(&["LOGIN", "AUTH", "READ", "READ", "WRITE", "LOGOUT"]));
+        benign.extend(s(&["LOGIN", "AUTH", "WRITE", "READ", "READ", "LOGOUT"]));
     }
-    normal_sequence.extend(["A", "B", "A", "C", "A", "B", "C"].iter().copied());
-    let normal_sequence: Vec<String> = normal_sequence.into_iter().map(str::to_string).collect();
-    detector.train(&normal_sequence)?;
+    detector.train(&benign)?;
 
-    // Score one sequence:
-    let test_sequence: Vec<String> = ["A", "B", "C", "X", "Y", "C", "A", "B", "C"]
-        .iter().map(|s| s.to_string()).collect();
-    for a in detector.detect_anomalies(&test_sequence, 0.2)? {
-        println!("window {:?}, strength {:.3}", a.sequence, a.anomaly_strength);
-    }
+    // Score four unknown sessions in parallel (lock-free over &detector).
+    let candidates = vec![
+        s(&["LOGIN", "AUTH", "READ", "WRITE", "READ", "LOGOUT"]),
+        s(&["LOGIN", "AUTH", "READ", "READ", "WRITE", "LOGOUT"]),
+        s(&["LOGIN", "AUTH", "WRITE", "READ", "READ", "LOGOUT"]),
+        s(&["LOGIN", "AUTH", "PRIV_ESCALATE", "EXFIL", "LOGOUT"]), // attack
+    ];
+    let results = batch_score(&detector, &candidates, 0.3)?;
 
-    // Or batch many in parallel (rayon, lock-free over `&AnomalyDetector`):
-    let unknown: Vec<Vec<String>> = vec![test_sequence.clone(), test_sequence];
-    let results = batch_score(&detector, &unknown, 0.2)?;
-    for (i, scores) in results.iter().enumerate() {
-        for s in scores {
-            println!("seq {i}: {:?} strength {:.3}", s.sequence, s.anomaly_strength);
+    for (i, anomalies) in results.iter().enumerate() {
+        if anomalies.is_empty() {
+            println!("session {i}: clean");
+        } else {
+            for a in anomalies {
+                println!(
+                    "session {i}: ANOMALY in {:?} (strength {:.3})",
+                    a.sequence, a.anomaly_strength
+                );
+            }
         }
     }
     Ok(())
 }
 ```
 
-Expected output for the single-sequence call: two flagged windows
-`["B","C","X","Y"]` and `["C","X","Y","C"]`. The rest of the test
-sequence matches the trained ABC pattern and falls below `0.2`.
+Output:
+
+```text
+session 0: clean
+session 1: clean
+session 2: clean
+session 3: ANOMALY in ["LOGIN", "AUTH", "PRIV_ESCALATE", "EXFIL"] (strength 0.481)
+session 3: ANOMALY in ["AUTH", "PRIV_ESCALATE", "EXFIL", "LOGOUT"] (strength 0.543)
+```
+
+The three benign sessions cap at strength 0.096 across every window,
+so threshold `0.3` clears them. The privilege-escalation session
+contains the never-before-seen `PRIV_ESCALATE` and `EXFIL` symbols and
+both four-grams that touch them break above the threshold.
 
 ## What This Library Does
 
