@@ -126,31 +126,40 @@ Markov chains **are not state of the art** for anomaly detection. Modern systems
 
 ## Testing
 
+The test suite is organised by feature in `tests/`, with shared
+fixtures in `tests/common/mod.rs`:
+
+| File | Coverage |
+|---|---|
+| `api.rs` | Public API smoke (constructors, training, metrics, optimisation) |
+| `math.rs` | Markov + Kolmogorov + Witten-Bell + Shannon entropy + KL invariants |
+| `detection.rs` | Anomaly-detection contract (score bounds, monotonicity, threshold) |
+| `sequences.rs` | Sequence behaviour (window truncation, alphabet scaling, long inputs) |
+| `workflow.rs` | End-to-end domain scenarios (network, fraud, IoT, syslog) |
+| `errors.rs` | Error-path coverage (`AnomalyGridError` variants) |
+| `concurrency.rs` | `Send + Sync` static asserts + parallel determinism |
+| `proptest.rs` | Property tests (sums to 1, entropy bounds, Unicode, long-sequence) |
+| `regression.rs` | Past-bug regressions |
+| `perf_*.rs` | Throughput / memory / scaling — run with `--release` |
+
 ```bash
-# Run all tests
-cargo test
-
-# Run specific test suites
-cargo test unit_           # Unit tests
-cargo test integration_    # Integration tests
-cargo test domain_         # Domain tests
-cargo test performance_    # Performance tests (run with --release for perf thresholds)
-
-# Run examples
-cargo run --example communication_protocol_analysis
-cargo run --example network_protocol_analysis
-cargo run --example protein_folding_sequences
+cargo test                      # all tests
+cargo test --test math          # one suite
+cargo test --release perf_      # performance suites
+cargo run --release --example network_protocol_analysis
+cargo run --release --example communication_protocol_analysis
+cargo run --release --example protein_folding_sequences
 ```
 
 ## Documentation
 
-- **[Complete Documentation](docs/)** - Comprehensive guides and API reference
-- **[API Reference](https://docs.rs/anomaly-grid)** - Online API documentation
-- **[Examples](examples/)**
-- **[Changelog](CHANGELOG.md)** - Version history and changes
+- [docs.rs/anomaly-grid](https://docs.rs/anomaly-grid) — rustdoc reference
+- [docs/api-reference.md](docs/api-reference.md) — public-surface map
+- [docs/mathematical-implementation.md](docs/mathematical-implementation.md) — Witten-Bell + entropy + KL
+- [docs/performance-guide.md](docs/performance-guide.md) — sizing, pruning, parallel scoring
+- [examples/](examples/) — runnable demos (network, comms, protein)
+- [CHANGELOG.md](CHANGELOG.md) — version history
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) file.
-
----
+MIT — see [LICENSE](LICENSE).
