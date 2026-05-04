@@ -25,8 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`tests/proptest.rs`).
 - `tests/concurrency.rs`: static `Send + Sync` assertions plus
   deterministic-across-thread-pool-sizes test.
-- `clippy::expect_used` and `missing_docs` are now denied at the crate
-  root in addition to `pedantic`, `nursery`, and `unwrap_used`.
+- `clippy::expect_used` is now denied at the crate root in addition to
+  `pedantic`, `nursery`, and `unwrap_used`.
 - Shared test fixtures in `tests/common/mod.rs` (`s()`, `trained()`,
   `pattern_abc()`, `max_strength()`).
 

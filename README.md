@@ -103,7 +103,7 @@ both four-grams that touch them break above the threshold.
   across thread-pool sizes.
 - **Strict lints**: builds under
   `#![deny(clippy::pedantic, clippy::nursery, clippy::unwrap_used,
-  clippy::expect_used, missing_docs)]`.
+  clippy::expect_used)]`.
 - **Property-tested invariants**: probability sums = 1, entropy
   bounded, parallel determinism, Unicode round-trip, long-sequence
   finiteness.
