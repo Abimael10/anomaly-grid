@@ -19,49 +19,100 @@
     clippy::doc_markdown
 )]
 
-//! Anomaly Grid - Sequential Pattern Analysis Library
+//! # Anomaly Grid
 //!
-//! A focused library for anomaly detection in finite-alphabet sequences using
-//! variable-order Markov chains with hierarchical context selection.
+//! Sequence anomaly detection over finite alphabets using **variable-order
+//! Markov chains** with **Witten-Bell interpolation** and an
+//! **information-theoretic** anomaly score.
 //!
-//! This library provides pattern-based anomaly detection through
-//! information-theoretic measures and probability estimation.
+//! ## Problem
 //!
-//! # Features
+//! Given a corpus of *known-normal* sequences over a finite alphabet
+//! (HTTP verbs, syscalls, protocol states, codon triplets, …), score each
+//! window of an unknown sequence by how *surprising* it is under that
+//! corpus. Surprise has two components, both measured in **bits**:
 //!
-//! - **Variable-Order Markov Models**: Hierarchical context selection with Witten-Bell interpolation
-//! - **Information Theory**: Shannon entropy, KL divergence
-//! - **Hierarchical Context Selection**: Automatic fallback from longer to shorter contexts
-//! - **Parallel Processing**: Batch analysis using Rayon for multiple sequences
+//! 1. **Average surprise** = `−log₂ P(window)` per symbol, where the
+//!    conditional probabilities come from the variable-order Markov model.
+//! 2. **Information score** = `mean(−log₂ P(xᵢ | context))` summed across
+//!    the window.
 //!
-//! # Quick Start
+//! These are combined and squashed by `tanh` into an *anomaly strength*
+//! ∈ \[0, 1):
 //!
-//! ```rust
-//! use anomaly_grid::*;
+//! ```text
+//! s = w_l · (−log₂ P) / (n−1)  +  w_i · I
+//! anomaly_strength = tanh(s / normalization_factor)
+//! ```
+//!
+//! ## Smoothing
+//!
+//! Conditional probability is the Witten-Bell interpolation:
+//!
+//! ```text
+//! P_wb(x | c) = λ(c)·P_ml(x|c) + (1−λ(c))·P_wb(x | suffix(c))
+//! λ(c) = N(c) / (N(c) + T(c))
+//! ```
+//!
+//! where `N(c)` is the number of observations of context `c` and `T(c)`
+//! is the number of distinct continuations seen. The order-0 base case
+//! is Add-α (Laplace) over the global alphabet:
+//! `P(x) = (count(x) + α) / (N + α·|Σ|)`.
+//!
+//! ## Quick start: train once, score many in parallel
+//!
+//! ```no_run
+//! use anomaly_grid::{AnomalyDetector, batch_score};
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let mut detector = AnomalyDetector::new(3)?;
-//! let normal_sequence = vec![
-//!     "A".to_string(), "B".to_string(), "C".to_string(),
-//!     "A".to_string(), "B".to_string(), "C".to_string(),
-//! ];
-//! detector.train(&normal_sequence)?;
 //!
-//! let test_sequence = vec![
-//!     "A".to_string(), "X".to_string(), "Y".to_string(),
+//! // Train on a corpus of known-normal sequences.
+//! let normal: Vec<Vec<String>> = vec![
+//!     ["LOGIN", "AUTH", "READ", "LOGOUT"].iter().map(|s| s.to_string()).collect(),
+//!     ["LOGIN", "AUTH", "WRITE", "LOGOUT"].iter().map(|s| s.to_string()).collect(),
 //! ];
-//! let anomalies = detector.detect_anomalies(&test_sequence, 0.1)?;
-//! for anomaly in anomalies {
-//!     println!("anomaly {:?}", anomaly.sequence);
+//! detector.train_sequences(&normal)?;
+//!
+//! // Score a stream of unknown sequences in parallel using rayon.
+//! let unknown: Vec<Vec<String>> = vec![
+//!     ["LOGIN", "AUTH", "READ", "LOGOUT"].iter().map(|s| s.to_string()).collect(),
+//!     ["LOGIN", "PRIV_ESCALATE", "WRITE", "LOGOUT"].iter().map(|s| s.to_string()).collect(),
+//! ];
+//! let results = batch_score(&detector, &unknown, 0.5)?;
+//! for (seq_index, scores) in results.iter().enumerate() {
+//!     for s in scores {
+//!         println!("seq {seq_index}: window {:?} strength {:.3}", s.sequence, s.anomaly_strength);
+//!     }
 //! }
 //! # Ok(()) }
 //! ```
 //!
-//! # Architecture
+//! ## Use cases
 //!
-//! - [`context_tree`]: context storage and probability estimation
-//! - [`markov_model`]: variable-order Markov chain implementation
-//! - [`anomaly_detector`]: anomaly detection over a trained model
+//! - **Network/protocol intrusion**: trains on benign session traces (states like
+//!   `SYN_SENT → ESTABLISHED → DATA_XFER → FIN_WAIT1 → CLOSED`), flags sessions
+//!   that diverge (e.g. `RESET` mid-stream, skipped handshake).
+//! - **Syscall trace monitoring**: trains on normal trace prefixes
+//!   (`open → read → close`, `socket → connect → send`), flags windows whose
+//!   pointwise surprise spikes — fileless malware and shell escapes typically
+//!   produce locally improbable transitions.
+//! - **Bioinformatics motif scanning**: trains on canonical reading frames
+//!   (codon triplets), flags codon windows whose Markov likelihood is low —
+//!   useful for spotting frameshifts and rare splice variants in known taxa.
+//!
+//! See `examples/` for runnable code.
+//!
+//! ## v0.5 → v0.6 migration
+//!
+//! - `batch_process_sequences(seqs, config, threshold)` is **removed**. The
+//!   old function trained a fresh detector on every input then scored that
+//!   same input — degenerate. Use [`batch_score`] with a pre-trained
+//!   [`AnomalyDetector`] instead.
+//! - `AnomalyScore::log_likelihood` is now the *average per-symbol log₂*
+//!   conditional probability (bits), not the natural-log of the joint.
+//! - `AnomalyScore::likelihood` is the geometric-mean conditional
+//!   probability `exp2(log_likelihood)` ∈ \[0, 1\].
 
 pub mod anomaly_detector;
 pub mod config;
@@ -94,7 +145,8 @@ mod tests {
 
     #[test]
     fn version_string_matches_cargo() {
-        // VERSION is `env!("CARGO_PKG_VERSION")`, a compile-time non-empty string.
+        // VERSION is `env!("CARGO_PKG_VERSION")`, a compile-time non-empty
+        // string. Assert basic shape (a digit and a dot) instead.
         assert!(VERSION.contains('.'));
     }
 
@@ -107,6 +159,7 @@ mod tests {
         let test_sequence: Vec<String> =
             ["A", "X", "Y"].iter().map(|s| (*s).to_string()).collect();
         let anomalies = detector.detect_anomalies(&test_sequence, 0.5)?;
+
         for anomaly in anomalies {
             assert!((0.0..=1.0).contains(&anomaly.likelihood));
             assert!((0.0..=1.0).contains(&anomaly.anomaly_strength));

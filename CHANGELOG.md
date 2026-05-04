@@ -3,6 +3,94 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-05-04
+
+### Added
+- `batch_score(detector, sequences, threshold)` for parallel scoring
+  against a **pre-trained** detector. Replaces the broken
+  `batch_process_sequences` which retrained per input. Built on rayon's
+  `par_iter` over a shared `&AnomalyDetector` (now `Send + Sync`-asserted
+  in `tests/concurrency_invariants.rs`).
+- `MarkovModel::log_likelihood_bits_per_symbol[_ids]`: numerically stable
+  per-symbol surprise that never multiplies probabilities. Long
+  sequences (1k–10k symbols) no longer produce subnormal/zero
+  likelihoods on the detection path.
+- `ContextTree::alphabet()`: public snapshot of Σ for callers that need
+  to iterate the global vocabulary (e.g. probability-sum invariants).
+- `AnomalyDetector::training_warnings`: surfaces validation diagnostics
+  (monotonous data, very short data, low diversity) that v0.5 dropped on
+  the floor.
+- Property tests for empty / length-1 / single-symbol-alphabet /
+  Unicode / 1k-symbol sequences and **parallel batch determinism**
+  (`tests/proptest_invariants.rs`).
+- `tests/concurrency_invariants.rs`: static `Send + Sync` assertions
+  plus deterministic-across-thread-pool-sizes test.
+- `clippy::expect_used` and `missing_docs` are now denied at the crate
+  root in addition to `pedantic`, `nursery`, and `unwrap_used`.
+
+### Changed
+- **BREAKING**: `batch_process_sequences(seqs, config, threshold)` is
+  removed. v0.5 trained a fresh detector on each input and then scored
+  the same input — degenerate. Use
+  `batch_score(&trained_detector, seqs, threshold)` instead.
+- **BREAKING**: `AnomalyScore::log_likelihood` is now the natural-log
+  of the *joint* `likelihood` (and `f64::NEG_INFINITY` on underflow).
+  The v0.5 anomaly-strength formula combined `−ln(L)` (nats) with
+  `−log₂ P` (bits), silently injecting a `ln 2 ≈ 0.693` scale factor
+  before `tanh`. The v0.6 `calculate_anomaly_strength` is bits-only and
+  uses a single combined weight.
+- **BREAKING**: `MarkovModel::get_background_probability` no longer
+  takes a state argument — the previous signature ignored it. The
+  function returns a single `α / (N + α·|Σ|)` scalar regardless of
+  state.
+- **BREAKING**: `AnomalyGridError::Internal(&'static str)` is now
+  produced by `ContextTrie::insert_context_path` and
+  `ContextTrie::get_or_create_context_data`, which were `panic!`ing via
+  `.expect("Invalid node ID")`. Callers using the trie directly must
+  propagate via `?`. Public users of `AnomalyDetector` / `ContextTree`
+  see no change — these errors only fire on internal arena corruption.
+- Module layout flattened: `mod.rs`-only directories collapsed to
+  flat `.rs` files (`anomaly_detector.rs`, `context_tree.rs`,
+  `markov_model.rs`).
+- Internal modules (`context_trie`, `transition_counts`,
+  `string_interner`, `validation`, `constants`) are now `pub(crate)`.
+- `MarkovModel::calculate_likelihood` is now computed via
+  `Σ log₂ P` then `exp2`, avoiding per-step product underflow on
+  moderate sequences. Very long sequences still underflow to zero —
+  use `log_likelihood_bits_per_symbol` for those.
+
+### Removed
+- Top-level `pub mod context_trie` exposure (now `pub(crate)`).
+- `lib::info()` (dead diagnostic helper).
+- `ContextTree::with_interner` (dead constructor — internal trie has
+  always owned its interner).
+- `ContextNode::add_transition(&str)` (dead — only `add_transition_by_id`
+  is called on the hot path).
+- `StringInterner::try_intern`, `get_arc`, `is_empty`,
+  `estimate_memory_usage`, `entries` (latter inlined into
+  `ContextTree::alphabet`); `StateIdConversion` trait;
+  `strings_to_state_ids` / `state_ids_to_strings` (all dead).
+- `validation::{validate_detection_sequence,
+  analyze_training_data_characteristics, TrainingDataAnalysis}` (dead).
+- All unused `constants::*` modules: only `validation::MIN_THRESHOLD`
+  / `MAX_THRESHOLD` remain.
+- Obsolete `total_transitions()` method on `ContextNode` (alias for
+  `total_count`).
+- `ContextStatistics` fields that were never populated (`total_entropy`,
+  `avg_entropy`, `min_*`, `max_*`, `transitions_by_context`).
+- `std::thread::sleep(10ms)` in
+  `tests/performance_5_stress_testing.rs` — made the test time-sensitive
+  on slow runners.
+
+### Fixed
+- Anomaly strength now combines surprise (bits) with information
+  content (bits) instead of mixing nats with bits. The `tanh` envelope
+  is preserved; the score is on a single, defined scale.
+- `batch_score` is deterministic across rayon thread-pool sizes
+  (verified by both proptest and integration test).
+- `ContextTrie` no longer panics on internal arena invariant violation;
+  errors propagate as `AnomalyGridError::Internal`.
+
 ## [0.5.0] - 2026-05-04
 
 ### Added

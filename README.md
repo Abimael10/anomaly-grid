@@ -6,71 +6,87 @@
     ██╔══██║██║╚██╗██║██║   ██║██║╚██╔╝██║██╔══██║██║    ╚██╔╝  
     ██║  ██║██║ ╚████║╚██████╔╝██║ ╚═╝ ██║██║  ██║███████╗██║   
     ╚═╝  ╚═╝╚═╝  ╚═══╝ ╚═════╝ ╚═╝     ╚═╝╚═╝  ╚═╝╚══════╝╚═╝   
-    [ANOMALY-GRID v0.4.3] - SEQUENCE ANOMALY DETECTION ENGINE
+    [ANOMALY-GRID v0.6.0] - SEQUENCE ANOMALY DETECTION ENGINE
 
 [![Crates.io](https://img.shields.io/crates/v/anomaly-grid.svg)](https://crates.io/crates/anomaly-grid)
 [![Downloads](https://img.shields.io/crates/d/anomaly-grid.svg)](https://crates.io/crates/anomaly-grid)
 [![Documentation](https://docs.rs/anomaly-grid/badge.svg)](https://docs.rs/anomaly-grid)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A Rust library implementing variable-order Markov chains for sequence anomaly detection in finite alphabets.
+A Rust library implementing variable-order Markov chains with **Witten-Bell interpolation** for sequence anomaly detection over finite alphabets. Anomaly strength combines per-symbol surprise and information content, both in bits, squashed by `tanh` into `[0, 1)`.
 
 ## Quick Start
 
 ```toml
 [dependencies]
-anomaly-grid = "0.4.3"
+anomaly-grid = "0.6"
 ```
 
+### Train once, score many in parallel
+
 ```rust
-use anomaly_grid::*;
+use anomaly_grid::{AnomalyDetector, batch_score};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Create detector (order-3)
     let mut detector = AnomalyDetector::new(3)?;
 
-    // Train on a richer pattern set: repeating ABC blocks plus a few benign variants
+    // Train on a corpus of *known-normal* sequences (a fleet of benign
+    // sessions, golden-path traces, etc.).
     let mut normal_sequence = Vec::new();
     for _ in 0..30 {
-        normal_sequence.extend(["A", "B", "C", "A", "B", "C", "A", "B", "C"].iter().cloned());
+        normal_sequence.extend(["A", "B", "C", "A", "B", "C", "A", "B", "C"].iter().copied());
     }
-    normal_sequence.extend(["A", "B", "A", "C", "A", "B", "C"].iter().cloned());
-    normal_sequence.extend(["A", "C", "B", "A", "B", "C"].iter().cloned());
-    let normal_sequence = normal_sequence
-        .into_iter()
-        .map(|s| s.to_string())
-        .collect::<Vec<_>>();
+    normal_sequence.extend(["A", "B", "A", "C", "A", "B", "C"].iter().copied());
+    let normal_sequence: Vec<String> = normal_sequence.into_iter().map(str::to_string).collect();
     detector.train(&normal_sequence)?;
 
-    // Detect deviations
-    let test_sequence = ["A", "B", "C", "X", "Y", "C", "A", "B", "C"]
-        .iter()
-        .map(|s| s.to_string())
-        .collect::<Vec<_>>();
-    let anomalies = detector.detect_anomalies(&test_sequence, 0.2)?;
-
-    for anomaly in anomalies {
-        println!(
-            "Anomaly window {:?}, Strength: {:.3}",
-            anomaly.sequence, anomaly.anomaly_strength
-        );
+    // Score one sequence:
+    let test_sequence: Vec<String> = ["A", "B", "C", "X", "Y", "C", "A", "B", "C"]
+        .iter().map(|s| s.to_string()).collect();
+    for a in detector.detect_anomalies(&test_sequence, 0.2)? {
+        println!("window {:?}, strength {:.3}", a.sequence, a.anomaly_strength);
     }
 
+    // Or batch many in parallel (rayon, lock-free over `&AnomalyDetector`):
+    let unknown: Vec<Vec<String>> = vec![test_sequence.clone(), test_sequence];
+    let results = batch_score(&detector, &unknown, 0.2)?;
+    for (i, scores) in results.iter().enumerate() {
+        for s in scores {
+            println!("seq {i}: {:?} strength {:.3}", s.sequence, s.anomaly_strength);
+        }
+    }
     Ok(())
 }
 ```
 
-Expected output with the above data:
-- Two anomaly windows flagged: `["B","C","X","Y"]` (strength ~0.27) and `["C","X","Y","C"]` (strength ~0.39).
-- No other windows reported; the rest of the test sequence matches the trained ABC pattern.
+Expected output for the single-sequence call: two flagged windows
+`["B","C","X","Y"]` and `["C","X","Y","C"]`. The rest of the test
+sequence matches the trained ABC pattern and falls below `0.2`.
 
 ## What This Library Does
 
-- Variable-order Markov modeling for finite alphabets (order 1..max_order with fallback).
-- On-the-fly scoring: likelihood + information score, combined into an anomaly strength.
-- Memory-conscious storage: string interning, trie-based contexts, SmallVec for small counts.
-- Batch processing: detect anomalies across many sequences in parallel (Rayon).
-- Tunable config: smoothing, weights, memory limit, and optimization helpers for pruning.
+- **Variable-order Markov model** with smooth Witten-Bell backoff
+  `λ(c) = N(c) / (N(c) + T(c))`. Order-0 base case is Laplace
+  (Add-α) over the global alphabet — unseen contexts never collapse to
+  zero probability.
+- **Information-theoretic scoring** in bits throughout: per-window
+  surprise `(−1/(n−1)) Σ log₂ P` and per-symbol information content
+  `−log₂ P(xᵢ | context)`.
+- **Memory-conscious storage**: `StateId(u32)` interner backed by
+  `Arc<str>`, arena trie indexed by `NodeId(u32)` with
+  `SmallVec<[(StateId, NodeId); 4]>` children (≤ 4 inline).
+  `TransitionCounts` enum stays inline as `SmallVec<[(StateId, usize); 4]>`
+  for the typical case and falls back to `HashMap` only when a context
+  exceeds 4 distinct continuations.
+- **Parallel batch scoring** (`batch_score`) over a shared
+  `&AnomalyDetector` via rayon. Lock-free during scoring; deterministic
+  across thread-pool sizes.
+- **Strict lints**: builds under
+  `#![deny(clippy::pedantic, clippy::nursery, clippy::unwrap_used,
+  clippy::expect_used, missing_docs)]`.
+- **Property-tested invariants**: probability sums = 1, entropy
+  bounded, parallel determinism, Unicode round-trip, long-sequence
+  finiteness.
 
 ## Configuration
 
