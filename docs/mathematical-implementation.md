@@ -1,147 +1,96 @@
 # Mathematical Implementation
 
-How the variable-order Markov model computes probabilities and anomaly scores for finite alphabets.
+How the variable-order Markov model computes probabilities and anomaly
+scores. The crate-level rustdoc has the same content in API-shaped form;
+this page is the textbook companion.
 
-## Core Algorithm
+## Variable-order Markov chain
 
-### Variable-Order Markov Chains
-
-Order ranges from 1 to `max_order`, with a fallback from longer to shorter contexts.
-
-#### State Transition Probability
-
-For a context of length `k` and next state `s`:
+For a context `c` of length `k ≤ max_order` and next symbol `x`, the
+conditional probability is the **Witten-Bell interpolation**:
 
 ```
-P(s | context) = (count(context → s) + α) / (count(context) + α × |vocabulary|)
+P_wb(x | c) = λ(c) · P_ml(x | c) + (1 − λ(c)) · P_wb(x | suffix(c))
+λ(c)        = N(c) / (N(c) + T(c))
 ```
 
-Where:
-- `α` is the smoothing parameter (configurable, default: 1.0)
-- `|vocabulary|` is the size of the alphabet
-- `count(context → s)` is the number of times state `s` follows the context
-- `count(context)` is the total number of times the context appears
+where:
 
-#### Hierarchical Context Selection
+- `N(c)` is the total number of times context `c` was observed during
+  training;
+- `T(c)` is the number of *distinct* continuations seen after `c`;
+- `P_ml(x | c) = (count(c, x) + α) / (N(c) + α · |Σ|)` is the
+  Laplace-smoothed maximum-likelihood estimate at this order;
+- `suffix(c)` drops the first symbol of `c`, recursing toward order 0.
 
-Fallback strategy:
-1. Try context of length `max_order`
-2. If none, try shorter contexts down to length 1
-3. If still none, use uniform probability `1 / |vocabulary|`
-
-### Information Theory
-
-#### Shannon Entropy
-
-For a probability distribution P:
+The order-0 base case is the smoothed unigram:
 
 ```
-H(X) = -∑ P(x) log₂ P(x)
+P(x) = (count(x) + α) / (N + α · |Σ|)
 ```
 
-#### Information Content
+Probabilities are normalised over the **global** alphabet `Σ` (all
+symbols seen at any point during training), not just over the symbols
+seen after `c`. This means `Σ_x P(x | c) = 1` exactly for every
+observed context.
 
-For a specific outcome with probability P(x):
+## Information-theoretic score
 
-```
-I(x) = -log₂ P(x)
-```
-
-#### Average Information Score
-
-For a sequence of length n:
+For a window `[x₁, …, xₙ]`, the implementation computes:
 
 ```
-avg_info = (1/n) × ∑ I(xᵢ)
+information_score = (1 / (n − 1)) · Σ_{i=1..n−1} −log₂ P_wb(x_{i+1} | x₁..x_i)   [bits]
+likelihood        = ∏_{i=1..n−1} P_wb(x_{i+1} | x₁..x_i)                          [chain rule, ∈ [0, 1]]
+log_likelihood    = ln(likelihood)                                                 [nats; −∞ on underflow]
+anomaly_strength  = tanh((w_l + w_i) · information_score / normalization_factor)   [∈ [0, 1)]
 ```
 
-### Anomaly Scoring
+The `tanh` envelope keeps the score bounded and monotonic. The two
+weights `w_l` and `w_i` (for likelihood and information components)
+were separate fields in v0.5 with mismatched units; v0.6 unifies them
+in bits and uses their sum as a single scale.
 
-#### Log-Likelihood Calculation
+## Numerical stability
 
-For a sequence S = [s₁, s₂, ..., sₙ]:
+Long sequences underflow if probabilities are multiplied directly. The
+detection hot path therefore stays in log-space:
 
 ```
-log_likelihood = ∑ log P(sᵢ | context_i)
+log_likelihood_bits_per_symbol = (1 / (n − 1)) · Σ log₂ P_wb(...)
 ```
 
-#### Anomaly Strength
+`MarkovModel::log_likelihood_bits_per_symbol` is the public entry point;
+`AnomalyScore::information_score` is the per-window value.
 
-The implementation combines a surprise term (−ln(likelihood) scaled to [0,1]) and an information term (information_score scaled to [0,1]) using the configured weights. The weighted score is then passed through a calibrated, piecewise scaling to keep values in [0,1] and accentuate higher-risk windows. Default weights: likelihood_weight = 0.7, information_weight = 0.3.
+A `min_probability` floor (default `1e-12`) prevents `log(0)` from any
+zero-count edge case.
 
-## Memory Optimization
+## Memory layout
 
-### String Interning
+- **String interning**: every distinct symbol is stored once as
+  `Arc<str>` and represented by a `StateId(u32)` everywhere else.
+  Hot-path comparisons are integer equality.
+- **Arena trie**: contexts share prefixes through a
+  `Vec<TrieNode>` indexed by `NodeId(u32)`. Each node carries a
+  `SmallVec<[(StateId, NodeId); 4]>` of children — typical alphabets
+  keep most nodes inline.
+- **Transition counts**: per-context counts live in a
+  `TransitionCounts` enum that stays inline in `SmallVec` for ≤ 4
+  distinct continuations and spills to `HashMap` only when needed.
 
-Duplicate strings are stored only once using a string interner, reducing memory usage for repeated elements.
+## Smoothing rationale
 
-### Trie-Based Storage
+Witten-Bell interpolation was chosen over plain Laplace at higher
+orders because it is much better-behaved when `N(c)` is small (rare
+contexts get more weight on the lower-order estimate, exactly when ML
+estimates would be noisy). The order-0 base case keeps Laplace because
+it has a closed-form normalisation over the full alphabet that doesn't
+need iteration.
 
-Context trees use trie structures to share common prefixes, significantly reducing memory usage for overlapping contexts.
+## Verification
 
-### Lazy Computation
-
-Entropy and information scores are computed on-demand and cached to avoid redundant calculations.
-
-## Complexity Analysis
-
-### Time Complexity
-
-#### Training
-- **Best case**: O(n × max_order) where n is sequence length
-- **Worst case**: O(n × max_order × |alphabet|) with hash collisions
-- **Average case**: O(n × max_order × log(contexts))
-
-#### Detection
-- **Per window**: O(max_order × log(contexts))
-- **Full sequence**: O(m × max_order × log(contexts)) where m is test sequence length
-
-### Space Complexity
-
-#### Theoretical Maximum
-```
-max_contexts = ∑(k=1 to max_order) |alphabet|^k
-```
-
-#### Practical Usage
-Actual memory usage is typically much lower due to:
-- Not all possible contexts appear in training data
-- String interning reduces duplicate storage
-- Trie structure shares common prefixes
-
-#### Memory Estimation
-```rust
-fn estimate_memory_usage(contexts: usize, avg_context_length: usize) -> usize {
-    let base_overhead = 64; // bytes per context node
-    let string_storage = avg_context_length * 8; // estimated string storage
-    contexts * (base_overhead + string_storage)
-}
-```
-
-## Numerical Considerations
-
-### Probability Bounds
-
-Probabilities are kept in [0, 1] with smoothing to avoid zeros and log-space math to avoid underflow.
-
-### Smoothing Strategies
-
-#### Laplace Smoothing (Default)
-```
-P_smooth(s | context) = (count + α) / (total + α × |vocab|)
-```
-
-#### Add-k Smoothing
-Configurable α parameter allows for different smoothing strengths:
-- α = 0: No smoothing (may cause zero probabilities)
-- α = 1: Laplace smoothing (default)
-- α > 1: Stronger smoothing (more uniform distribution)
-
-### Numerical Stability
-
-- Likelihood calculations use log-space with clamping for underflow/overflow protection.
-- Anomaly strengths are kept in [0, 1] using a calibrated piecewise scaling of the weighted score.
-
-## Validation and Testing
-
-Tests cover probability conservation (∑P=1), threshold monotonicity, consistent outputs, and score bounds; domain tests exercise Markov math, information measures, detection logic, and sequence analysis.
+Concrete-input regressions live in `tests/math.rs`; randomised
+properties (sums to 1, entropy bounds, parallel determinism) live in
+`tests/proptest.rs`. Both are run on every CI build under
+`#![deny(clippy::pedantic, clippy::nursery, clippy::unwrap_used,
+clippy::expect_used)]`.
