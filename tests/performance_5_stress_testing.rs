@@ -191,8 +191,10 @@ fn test_sustained_load_stress_testing() {
             );
         }
 
-        // Small delay to control throughput
-        std::thread::sleep(std::time::Duration::from_millis(10));
+        // No artificial throttling — the loop body's work itself sets the
+        // pace, and the assertion above already ensures we honour memory
+        // bounds. (v0.6: removed `thread::sleep(10ms)` which made the
+        // test time-sensitive on slow CI runners.)
     }
 
     let total_time = test_start.elapsed();
