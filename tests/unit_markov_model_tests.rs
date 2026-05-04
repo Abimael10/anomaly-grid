@@ -212,28 +212,12 @@ fn test_background_probability() {
         .collect::<Vec<_>>();
     model.train(&sequence).expect("Failed to train");
 
-    // Test background probability for known state
-    let bg_prob_a = model.get_background_probability("A");
+    // Background probability is the Laplace smoothing floor:
+    // α / (N + α·|Σ|). It's a single value for the whole model.
+    let bg = model.get_background_probability();
     assert!(
-        bg_prob_a > 0.0 && bg_prob_a <= 1.0,
-        "Background probability for known state should be in (0,1]: {:.6}",
-        bg_prob_a
-    );
-
-    // Test background probability for unknown state
-    let bg_prob_x = model.get_background_probability("X");
-    assert!(
-        bg_prob_x > 0.0 && bg_prob_x <= 1.0,
-        "Background probability for unknown state should be in (0,1]: {:.6}",
-        bg_prob_x
-    );
-
-    // Unknown state should have lower probability than known state
-    assert!(
-        bg_prob_x <= bg_prob_a,
-        "Unknown state should have lower background probability: X={:.6}, A={:.6}",
-        bg_prob_x,
-        bg_prob_a
+        bg > 0.0 && bg <= 1.0,
+        "Background probability should be in (0,1]: {bg:.6}"
     );
 }
 

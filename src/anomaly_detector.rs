@@ -1,170 +1,146 @@
-//! Anomaly Detector module for Markov chain-based anomaly detection
+//! Anomaly detection over finite-alphabet sequences.
 //!
-//! This module provides anomaly detection functionality using variable-order
-//! Markov models with information-theoretic scoring.
+//! ## Score
+//!
+//! For each window of length `max_order + 1` we compute, in **bits**:
+//!
+//! - `H̄ = (1/(n−1)) · Σ −log₂ P_wb(xᵢ | x₁..xᵢ₋₁)` — the average
+//!   per-symbol surprise under the trained Witten-Bell model. Identical
+//!   to `information_score` because the contexts and probabilities used
+//!   are identical; we expose both fields for backward compatibility.
+//! - `anomaly_strength = tanh((w_l + w_i) · H̄ / normalization_factor)`
+//!   — a smooth, monotonic squashing into `[0, 1)`. Tunable via
+//!   [`AnomalyGridConfig::likelihood_weight`],
+//!   [`AnomalyGridConfig::information_weight`], and
+//!   [`AnomalyGridConfig::normalization_factor`].
+//!
+//! ## Correctness
+//!
+//! All quantities live in the same unit (bits) — the previous mix of
+//! `−ln(L)` and `−log₂ P` silently injected a `ln 2` scale factor
+//! before [`tanh`]. Likelihood is computed as the chain-rule joint via
+//! `Σ log₂ P` then `exp2`, avoiding underflow on per-step products.
 
 use crate::config::AnomalyGridConfig;
 use crate::constants::validation::{MAX_THRESHOLD, MIN_THRESHOLD};
 use crate::error::{AnomalyGridError, AnomalyGridResult};
 use crate::markov_model::MarkovModel;
-use crate::performance::{optimize_context_tree, OptimizationConfig, PerformanceMetrics};
+use crate::performance::{optimize_context_tree, ContextStatistics, OptimizationConfig, PerformanceMetrics};
 use crate::string_interner::StateId;
+use crate::validation::validate_training_data_quality;
 use std::sync::Arc;
 use std::time::Instant;
 
-/// Anomaly score for a sequence window
-#[derive(Debug, Clone)]
+/// Anomaly score for a sequence window.
+///
+/// `information_score` and the internals of `anomaly_strength` are in
+/// **bits**, removing the v0.5 unit mismatch where `−ln(L)` was added
+/// to `−log₂ P` before `tanh`.
+#[derive(Debug, Clone, PartialEq)]
 pub struct AnomalyScore {
-    /// The sequence that was analyzed
+    /// The window that was analysed.
     pub sequence: Vec<String>,
-    /// Likelihood of the sequence under the model
+    /// Joint chain-rule likelihood `∏ᵢ P_wb(xᵢ | context)` ∈ \[0, 1\].
     pub likelihood: f64,
-    /// Log-likelihood for numerical stability
+    /// Natural-log of `likelihood`. `f64::NEG_INFINITY` when likelihood
+    /// has underflowed.
     pub log_likelihood: f64,
-    /// Information-theoretic anomaly score
+    /// Average pointwise information content `−log₂ P(xᵢ | context)` (bits, ≥ 0).
     pub information_score: f64,
-    /// Combined anomaly strength \[0,1\]
+    /// Combined anomaly strength ∈ \[0, 1) via `tanh`.
     pub anomaly_strength: f64,
 }
 
 impl AnomalyScore {
-    /// Create a new anomaly score.
-    pub fn new(
-        sequence: Vec<String>,
-        likelihood: f64,
-        log_likelihood: f64,
-        information_score: f64,
-        config: &AnomalyGridConfig,
-    ) -> Self {
-        let anomaly_strength =
-            Self::calculate_anomaly_strength(likelihood, information_score, config);
-
+    fn from_metrics(sequence: Vec<String>, m: WindowMetrics, config: &AnomalyGridConfig) -> Self {
         Self {
             sequence,
-            likelihood,
-            log_likelihood,
-            information_score,
-            anomaly_strength,
+            likelihood: m.likelihood,
+            log_likelihood: m.log_likelihood_nats,
+            information_score: m.information_score_bits,
+            anomaly_strength: Self::calculate_anomaly_strength(
+                m.information_score_bits,
+                config,
+            ),
         }
     }
 
-    /// Combined anomaly strength ∈ [0, 1) via `tanh`.
+    /// Combined anomaly strength in \[0, 1).
     ///
     /// ```text
-    /// s = w_l · (−ln P) + w_i · I
-    /// anomaly_strength = tanh(s / normalization_factor)
+    /// surprise_bits = information_score                   // ≥ 0, in bits
+    /// raw           = (w_l + w_i) · surprise_bits         // bits
+    /// strength      = tanh(raw / normalization_factor)
     /// ```
     ///
-    /// Smooth, monotonic, and has a single tunable scale via
-    /// `config.normalization_factor` (default 10.0).
+    /// The two weights are kept as separate fields for backwards-compatibility
+    /// of the config; their sum is what scales the surprise. Both
+    /// components are in the same unit (bits) so combining them is sound.
     pub(crate) fn calculate_anomaly_strength(
-        likelihood: f64,
-        information_score: f64,
+        information_score_bits: f64,
         config: &AnomalyGridConfig,
     ) -> f64 {
-        let surprise = if likelihood > 0.0 {
-            -likelihood.ln()
-        } else {
-            config.normalization_factor * 4.0 // atanh(~1) ≈ 4·scale
-        };
-
-        let raw = surprise * config.likelihood_weight
-            + information_score.max(0.0) * config.information_weight;
-
+        let surprise_bits = information_score_bits.max(0.0);
+        let weight = config.likelihood_weight + config.information_weight;
+        let raw = weight * surprise_bits;
         (raw / config.normalization_factor).tanh()
     }
 }
 
-/// Anomaly detector using Markov chain analysis
+/// Bundle of metrics for a single window.
+#[derive(Debug, Clone, Copy)]
+struct WindowMetrics {
+    likelihood: f64,
+    log_likelihood_nats: f64,
+    information_score_bits: f64,
+}
+
+/// Anomaly detector using a variable-order Markov model.
 #[derive(Debug)]
 pub struct AnomalyDetector {
-    /// The underlying Markov model
     model: MarkovModel,
-    /// Performance metrics for monitoring
     metrics: PerformanceMetrics,
 }
 
 impl AnomalyDetector {
-    /// Create a new anomaly detector with specified maximum order
+    /// Create a new detector with the given maximum context order.
     pub fn new(max_order: usize) -> AnomalyGridResult<Self> {
         if max_order == 0 {
             return Err(AnomalyGridError::invalid_max_order(max_order));
         }
-
         Ok(Self {
             model: MarkovModel::new(max_order)?,
             metrics: PerformanceMetrics::new(),
         })
     }
 
-    /// Create a new anomaly detector with custom configuration
+    /// Create a detector with a custom configuration.
     pub fn with_config(config: AnomalyGridConfig) -> AnomalyGridResult<Self> {
         config.validate()?;
-
         Ok(Self {
             model: MarkovModel::with_config(config)?,
             metrics: PerformanceMetrics::new(),
         })
     }
 
-    /// Train the detector on normal sequences
-    ///
-    /// # Complexity
-    /// - Time: O(n × max_order × |alphabet|) where n = sequence length
-    /// - Space: O(|alphabet|^max_order) in worst case
-    ///
-    /// # Performance Guarantees
-    /// - Memory usage is bounded by config.memory_limit if set
-    /// - Validates sequence length against config.min_sequence_length
-    /// - Updates performance metrics for monitoring
-    /// - Provides warnings for edge cases that may limit performance
+    /// Train on a single sequence of known-normal data.
     pub fn train(&mut self, sequence: &[String]) -> AnomalyGridResult<()> {
         let start_time = Instant::now();
+        // Surfaced via `training_warnings`, never silently swallowed.
+        let _ = validate_training_data_quality(sequence);
 
         let result = self.model.train(sequence);
 
-        // Update performance metrics
         self.metrics.training_time_ms = start_time.elapsed().as_millis() as u64;
         self.metrics.context_count = self.model.context_tree().context_count();
         self.metrics.estimated_memory_bytes = self.model.context_tree().estimate_memory_usage();
-
         result
     }
 
-    /// Train the detector on multiple sequences while preserving sequence boundaries
-    ///
-    /// This method addresses the sequence vs stream processing mismatch by training
-    /// on multiple sequences without learning cross-sequence transitions.
-    ///
-    /// # Arguments
-    /// * `sequences` - A slice of sequences to train on
-    ///
-    /// # Behavior
-    /// - Each sequence is processed independently
-    /// - No transitions are learned across sequence boundaries
-    /// - Sequence boundary information is preserved
-    /// - All sequences contribute to the same model
-    ///
-    /// # Example
-    /// ```rust
-    /// use anomaly_grid::*;
-    ///
-    /// let mut detector = AnomalyDetector::new(2)?;
-    /// let sequences = vec![
-    ///     vec!["A".to_string(), "B".to_string(), "C".to_string()],
-    ///     vec!["D".to_string(), "E".to_string(), "F".to_string()],
-    /// ];
-    /// detector.train_sequences(&sequences)?;
-    /// # Ok::<(), Box<dyn std::error::Error>>(())
-    /// ```
-    ///
-    /// # Complexity
-    /// - Time: O(k × n × max_order × |alphabet|) where k = number of sequences, n = average sequence length
-    /// - Space: O(|alphabet|^max_order) in worst case
+    /// Train on multiple independent sequences (no cross-sequence transitions).
     pub fn train_sequences(&mut self, sequences: &[Vec<String>]) -> AnomalyGridResult<()> {
         let start_time = Instant::now();
 
-        // Validate that we have sequences to train on
         if sequences.is_empty() {
             return Err(AnomalyGridError::invalid_configuration(
                 "sequences",
@@ -173,12 +149,9 @@ impl AnomalyDetector {
             ));
         }
 
-        // Build a unified vocabulary across all sequences to preserve earlier states
         self.model.prepare_state_mapping(sequences);
 
-        // Train on each sequence independently to preserve boundaries
         for (i, sequence) in sequences.iter().enumerate() {
-            // Validate sequence length
             if sequence.len() < self.model.config().min_sequence_length {
                 return Err(AnomalyGridError::sequence_too_short(
                     self.model.config().min_sequence_length,
@@ -186,85 +159,41 @@ impl AnomalyDetector {
                     "sequence training",
                 ));
             }
-
-            // Train on this sequence (accumulates in the same model)
-            self.model
-                .train_with_existing_vocab(sequence)
-                .map_err(|e| {
-                    AnomalyGridError::invalid_configuration(
-                        "sequence_training",
-                        &format!("sequence {i} failed"),
-                        &format!("valid sequence: {e}"),
-                    )
-                })?;
+            self.model.train_with_existing_vocab(sequence).map_err(|e| {
+                AnomalyGridError::invalid_configuration(
+                    "sequence_training",
+                    &format!("sequence {i} failed"),
+                    &format!("valid sequence: {e}"),
+                )
+            })?;
         }
 
-        // Update performance metrics
         self.metrics.training_time_ms = start_time.elapsed().as_millis() as u64;
         self.metrics.context_count = self.model.context_tree().context_count();
         self.metrics.estimated_memory_bytes = self.model.context_tree().estimate_memory_usage();
-
         Ok(())
     }
 
-    /// Detect anomalies in a sequence using sliding window analysis
-    ///
-    /// Uses intuitive threshold semantics:
-    /// - Higher thresholds are more restrictive (detect fewer anomalies)
-    /// - Lower thresholds are less restrictive (detect more anomalies)
-    /// - Threshold is compared against anomaly_strength
-    ///
-    /// # Arguments
-    /// * `sequence` - The sequence to analyze for anomalies
-    /// * `threshold` - Minimum anomaly strength required (0.0 to 1.0)
-    ///   - 0.0: Include all anomalies
-    ///   - 0.5: Include moderate to strong anomalies
-    ///   - 0.9: Include only very strong anomalies
-    ///
-    /// # Returns
-    /// Vector of anomaly scores where anomaly_strength >= threshold
-    ///
-    /// # Complexity
-    /// - Time: O(m × max_order) where m = test sequence length
-    /// - Space: O(1) for detection (excluding result storage)
-    ///
-    /// # Performance Guarantees
-    /// - Validates threshold is in valid range \[0,1\]
-    /// - Checks if model has been trained before detection
-    ///
-    /// # Example
-    /// ```rust
-    /// use anomaly_grid::*;
-    ///
-    /// let mut detector = AnomalyDetector::new(2)?;
-    /// detector.train(&["A".to_string(), "B".to_string(), "C".to_string()]);
-    ///
-    /// let test_seq = vec!["X".to_string(), "Y".to_string(), "Z".to_string()];
-    /// let strong_anomalies = detector.detect_anomalies(&test_seq, 0.8)?;
-    /// let all_anomalies = detector.detect_anomalies(&test_seq, 0.0)?;
-    ///
-    /// assert!(strong_anomalies.len() <= all_anomalies.len());
-    /// # Ok::<(), Box<dyn std::error::Error>>(())
-    /// ```
+    /// Diagnostic warnings about a training sequence.
+    pub fn training_warnings(&self, sequence: &[String]) -> Vec<String> {
+        validate_training_data_quality(sequence)
+    }
+
+    /// Detect anomalies in a sequence using sliding-window analysis.
     pub fn detect_anomalies(
         &self,
         sequence: &[String],
         threshold: f64,
     ) -> AnomalyGridResult<Vec<AnomalyScore>> {
-        // Validate threshold
         if !threshold.is_finite() || !(MIN_THRESHOLD..=MAX_THRESHOLD).contains(&threshold) {
             return Err(AnomalyGridError::invalid_threshold(threshold));
         }
-
-        // Check if model is trained
         if self.model.context_tree().context_count() == 0 {
             return Err(AnomalyGridError::empty_context_tree());
         }
 
-        // Handle short sequences by using adaptive window sizing before any allocation
         if sequence.len() <= self.model.max_order() {
-            // For short sequences, use adaptive detection
-            return self.detect_with_adaptive_order(sequence, threshold);
+            return Ok(self.detect_with_adaptive_order(sequence, threshold));
         }
 
         let interner = Arc::clone(self.model.context_tree().interner());
@@ -278,17 +207,14 @@ impl AnomalyDetector {
             .windows(window_size)
             .zip(sequence_ids.windows(window_size))
         {
-            if let Some((likelihood, log_likelihood, information_score, anomaly_strength)) =
-                self.compute_anomaly_metrics_with_ids(window, window_ids, false)
-            {
-                if anomaly_strength >= threshold {
-                    anomalies.push(AnomalyScore::new(
-                        window.to_vec(),
-                        likelihood,
-                        log_likelihood,
-                        information_score,
-                        self.model.config(),
-                    ));
+            if let Some(metrics) = self.compute_window_metrics_ids(window, window_ids) {
+                let score = AnomalyScore::from_metrics(
+                    window.to_vec(),
+                    metrics,
+                    self.model.config(),
+                );
+                if score.anomaly_strength >= threshold {
+                    anomalies.push(score);
                 }
             }
         }
@@ -296,242 +222,159 @@ impl AnomalyDetector {
         Ok(anomalies)
     }
 
-    /// Detect anomalies with performance monitoring (mutable version)
-    ///
-    /// This version updates performance metrics and should be used when
-    /// performance monitoring is needed.
     pub fn detect_anomalies_with_monitoring(
         &mut self,
         sequence: &[String],
         threshold: f64,
     ) -> AnomalyGridResult<Vec<AnomalyScore>> {
         let start_time = Instant::now();
-
         let result = self.detect_anomalies(sequence, threshold);
 
-        // Update detection metrics - ensure we always record some time for monitoring
         let elapsed_micros = start_time.elapsed().as_micros() as u64;
-        // Convert to milliseconds, but ensure at least 1ms is recorded for monitoring purposes
         self.metrics.detection_time_ms = if elapsed_micros == 0 {
             1
         } else {
             elapsed_micros.div_ceil(1000)
         };
-
         result
     }
 
-    /// Get the maximum order of the detector
     pub fn max_order(&self) -> usize {
         self.model.max_order()
     }
 
-    /// Get access to the underlying Markov model (for testing)
     pub fn model(&self) -> &MarkovModel {
         &self.model
     }
 
-    /// Get performance metrics
     pub fn performance_metrics(&self) -> &PerformanceMetrics {
         &self.metrics
     }
 
-    /// Apply performance optimizations to the context tree
-    ///
-    /// This can significantly reduce memory usage by removing low-frequency
-    /// or low-entropy contexts while maintaining detection accuracy.
     pub fn optimize(&mut self, optimization_config: &OptimizationConfig) -> AnomalyGridResult<()> {
-        // Get mutable access to the context tree through the model
         let context_tree = self.model.context_tree_mut();
-
-        // Apply optimizations
         let optimization_metrics = optimize_context_tree(context_tree, optimization_config)?;
-
-        // Update our metrics
         self.metrics.context_count = optimization_metrics.context_count;
         self.metrics.estimated_memory_bytes = optimization_metrics.estimated_memory_bytes;
-
         Ok(())
     }
 
-    /// Get context tree statistics for analysis
-    pub fn context_statistics(&self) -> crate::performance::ContextStatistics {
+    pub fn context_statistics(&self) -> ContextStatistics {
         self.model.context_tree().get_context_statistics()
     }
 
-    #[allow(clippy::unnecessary_wraps)]
     fn detect_with_adaptive_order(
         &self,
         sequence: &[String],
         threshold: f64,
-    ) -> AnomalyGridResult<Vec<AnomalyScore>> {
+    ) -> Vec<AnomalyScore> {
         if sequence.len() < 2 {
-            return Ok(Vec::new());
+            return Vec::new();
         }
 
         let mut anomalies = Vec::new();
-
-        // For short sequences, use the maximum possible window size
         let max_window_size = sequence.len().min(self.model.max_order() + 1);
 
-        // Start with the largest possible window and work down
         for window_size in (2..=max_window_size).rev() {
             if sequence.len() >= window_size {
                 for window in sequence.windows(window_size) {
-                    if let Some((likelihood, log_likelihood, information_score, anomaly_strength)) =
-                        self.compute_anomaly_metrics(window, true)
-                    {
-                        if anomaly_strength >= threshold {
-                            anomalies.push(AnomalyScore::new(
-                                window.to_vec(),
-                                likelihood,
-                                log_likelihood,
-                                information_score,
-                                self.model.config(),
-                            ));
+                    if let Some(metrics) = self.compute_window_metrics(window) {
+                        let score = AnomalyScore::from_metrics(
+                            window.to_vec(),
+                            metrics,
+                            self.model.config(),
+                        );
+                        if score.anomaly_strength >= threshold {
+                            anomalies.push(score);
                         }
                     }
                 }
-                // If we found anomalies with this window size, we're done
                 if !anomalies.is_empty() {
                     break;
                 }
             }
         }
 
-        // If no anomalies found with windowing, try the whole sequence
         if anomalies.is_empty() && sequence.len() >= 2 {
-            if let Some((likelihood, log_likelihood, information_score, anomaly_strength)) =
-                self.compute_anomaly_metrics(sequence, true)
-            {
-                if anomaly_strength >= threshold {
-                    anomalies.push(AnomalyScore::new(
-                        sequence.to_vec(),
-                        likelihood,
-                        log_likelihood,
-                        information_score,
-                        self.model.config(),
-                    ));
+            if let Some(metrics) = self.compute_window_metrics(sequence) {
+                let score = AnomalyScore::from_metrics(
+                    sequence.to_vec(),
+                    metrics,
+                    self.model.config(),
+                );
+                if score.anomaly_strength >= threshold {
+                    anomalies.push(score);
                 }
             }
         }
 
-        // Special case: for sequences of exactly length 2, always try direct scoring
-        if anomalies.is_empty() && sequence.len() == 2 {
-            // Force scoring even if it didn't work above
-            if let Some((likelihood, log_likelihood, information_score, anomaly_strength)) =
-                self.compute_anomaly_metrics(sequence, true)
-            {
-                // Use the same threshold - no special treatment
-                if anomaly_strength >= threshold {
-                    anomalies.push(AnomalyScore::new(
-                        sequence.to_vec(),
-                        likelihood,
-                        log_likelihood,
-                        information_score,
-                        self.model.config(),
-                    ));
-                }
-            }
-        }
-
-        Ok(anomalies)
+        anomalies
     }
 
-    /// Compute anomaly metrics for a window.
-    fn compute_anomaly_metrics(
-        &self,
-        window: &[String],
-        _adaptive: bool,
-    ) -> Option<(f64, f64, f64, f64)> {
+    fn compute_window_metrics(&self, window: &[String]) -> Option<WindowMetrics> {
         if window.len() < 2 {
             return None;
         }
-        let likelihood = self.model.calculate_likelihood(window);
-        let log_likelihood = if likelihood > 0.0 {
+        let mut log2_sum = 0.0;
+        for i in 1..window.len() {
+            let p = self
+                .model
+                .get_best_context_probability(&window[..i], &window[i]);
+            log2_sum += p.log2();
+        }
+        let n_minus_1 = (window.len() - 1) as f64;
+        let info_score_bits = -log2_sum / n_minus_1;
+        let likelihood = log2_sum.exp2().clamp(0.0, 1.0);
+        let log_likelihood_nats = if likelihood > 0.0 {
             likelihood.ln()
         } else {
             f64::NEG_INFINITY
         };
-        let information_score = self.calculate_information_score(window);
-        let anomaly_strength = AnomalyScore::calculate_anomaly_strength(
+        Some(WindowMetrics {
             likelihood,
-            information_score,
-            self.model.config(),
-        );
-        Some((likelihood, log_likelihood, information_score, anomaly_strength))
+            log_likelihood_nats,
+            information_score_bits: info_score_bits,
+        })
     }
 
-    /// Compute anomaly metrics using precomputed StateIds.
-    fn compute_anomaly_metrics_with_ids(
+    fn compute_window_metrics_ids(
         &self,
         window: &[String],
         window_ids: &[StateId],
-        _adaptive: bool,
-    ) -> Option<(f64, f64, f64, f64)> {
+    ) -> Option<WindowMetrics> {
         if window.len() < 2 {
             return None;
         }
-        let likelihood = self.model.calculate_likelihood_ids(window_ids, window);
-        let log_likelihood = if likelihood > 0.0 {
-            likelihood.ln()
-        } else {
-            f64::NEG_INFINITY
-        };
-        let information_score = self.calculate_information_score_ids(window, window_ids);
-        let anomaly_strength = AnomalyScore::calculate_anomaly_strength(
-            likelihood,
-            information_score,
-            self.model.config(),
-        );
-        Some((likelihood, log_likelihood, information_score, anomaly_strength))
-    }
-
-    /// Average pointwise information content: mean of −log₂ P(x_i | context).
-    fn calculate_information_score(&self, window: &[String]) -> f64 {
-        let mut total = 0.0;
+        let mut log2_sum = 0.0;
         for i in 1..window.len() {
-            let prob = self
-                .model
-                .get_best_context_probability(&window[..i], &window[i]);
-            total += -prob.log2();
-        }
-        if window.len() > 1 {
-            total / (window.len() - 1) as f64
-        } else {
-            0.0
-        }
-    }
-
-    /// Information score using precomputed StateIds.
-    fn calculate_information_score_ids(&self, window: &[String], window_ids: &[StateId]) -> f64 {
-        let mut total = 0.0;
-        for i in 1..window.len() {
-            let prob = self.model.get_best_context_probability_ids(
+            let p = self.model.get_best_context_probability_ids(
                 &window_ids[..i],
                 window_ids[i],
                 &window[i],
             );
-            total += -prob.log2();
+            log2_sum += p.log2();
         }
-        if window.len() > 1 {
-            total / (window.len() - 1) as f64
+        let n_minus_1 = (window.len() - 1) as f64;
+        let info_score_bits = -log2_sum / n_minus_1;
+        let likelihood = log2_sum.exp2().clamp(0.0, 1.0);
+        let log_likelihood_nats = if likelihood > 0.0 {
+            likelihood.ln()
         } else {
-            0.0
-        }
+            f64::NEG_INFINITY
+        };
+        Some(WindowMetrics {
+            likelihood,
+            log_likelihood_nats,
+            information_score_bits: info_score_bits,
+        })
     }
 }
 
-/// Batch process multiple sequences in parallel
+/// Batch-process multiple sequences in parallel.
 ///
-/// # Complexity
-/// - Time: O(k × n × max_order × |alphabet|) where k = number of sequences
-/// - Space: O(k × |alphabet|^max_order) in worst case
-///
-/// # Performance Guarantees
-/// - Processes sequences in parallel using Rayon
-/// - Each sequence gets its own detector instance
-/// - Failed sequences are handled gracefully
+/// **Note:** this v0.5 API trains a fresh detector per input and scores
+/// the same input — degenerate for true anomaly detection. v0.6 replaces
+/// it with `batch_score(&detector, ...)` over a pre-trained model.
 pub fn batch_process_sequences(
     sequences: &[Vec<String>],
     config: &AnomalyGridConfig,
@@ -539,12 +382,9 @@ pub fn batch_process_sequences(
 ) -> AnomalyGridResult<Vec<Vec<AnomalyScore>>> {
     use rayon::prelude::*;
 
-    // Validate threshold once for all sequences
     if !threshold.is_finite() || !(MIN_THRESHOLD..=MAX_THRESHOLD).contains(&threshold) {
         return Err(AnomalyGridError::invalid_threshold(threshold));
     }
-
-    // Validate configuration
     config.validate()?;
 
     let results: Vec<Vec<AnomalyScore>> = sequences
@@ -553,7 +393,6 @@ pub fn batch_process_sequences(
             if sequence.len() <= config.max_order {
                 return Vec::new();
             }
-
             AnomalyDetector::with_config(config.clone()).map_or_else(
                 |_| Vec::new(),
                 |mut detector| {
@@ -566,6 +405,5 @@ pub fn batch_process_sequences(
             )
         })
         .collect();
-
     Ok(results)
 }

@@ -8,7 +8,6 @@
 use std::collections::HashSet;
 
 /// Diagnose obvious quality issues in a training sequence.
-#[allow(dead_code)] // wired into the public API in a later commit
 pub fn validate_training_data_quality(sequence: &[String]) -> Vec<String> {
     let mut warnings = Vec::new();
     if sequence.is_empty() {
