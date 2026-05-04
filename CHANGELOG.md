@@ -3,6 +3,36 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-05-04
+
+### Added
+- Property-based tests via proptest: probability normalization, entropy bounds, anomaly strength bounds, backoff monotonicity, training determinism
+- Witten-Bell interpolation for variable-order backoff, replacing hard-cutoff heuristic
+- `get_transition_probability_by_ids` for fast StateId-based context lookups
+- `global_vocab_size()` on `ContextTree` derived from the shared interner
+
+### Changed
+- **BREAKING**: Laplace smoothing now normalizes over the global alphabet (`interner.len()`) instead of local context vocabulary — fixes under-smoothing for unseen symbols
+- **BREAKING**: Anomaly strength uses `tanh`-based scoring instead of piecewise-linear formula
+- **BREAKING**: Deleted `new_v2`, `calculate_likelihood_with_fallback`, `calculate_information_score_enhanced` (dead/duplicate code)
+- All probability methods (`get_probability`, `compute_entropy`, `compute_kl_divergence`, `get_all_probabilities`) now take a `global_vocab_size` parameter
+- Marginal probability uses smoothed unigram: `P(x) = (count + α) / (N + α·|Σ|)`
+- Error types migrated to thiserror with structured `AnomalyGridError` variants
+- Lint gates: `#![deny(clippy::pedantic, clippy::nursery, clippy::unwrap_used)]` enforced across all targets
+
+### Removed
+- `memory_pool` module (entirely dead code)
+- `STATE_ID_BUFFER` thread-local and `RefCell` machinery
+- `context_has_sufficient_data` / `context_has_sufficient_data_ids` magic-threshold heuristics
+- `get_transition_probability_normalized` / `get_transition_probability_normalized_ids` (replaced by global-alphabet variants)
+- `eprintln!` warnings from `train()`
+- Uniform-sequence fast path in detector
+
+### Fixed
+- Probability distributions now sum to 1.0 over the full global alphabet
+- Entropy upper bound correctly bounded by `log₂(|Σ_global|)`
+- String interner `try_intern` no longer holds read guard across write acquisition
+
 ## [0.4.2] - 2025-12-11
 
 ### Added
