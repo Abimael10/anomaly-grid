@@ -347,9 +347,16 @@ fn test_batch_processing_workflow() {
             .collect(),
     ];
 
-    let config = AnomalyGridConfig::default();
-    let results =
-        batch_process_sequences(&sequences, &config, 0.1).expect("Failed to process sequences");
+    // Train once on a representative normal corpus, then batch_score the
+    // candidate sequences. Anything anomalous within them is flagged.
+    let mut detector = AnomalyDetector::new(2).expect("detector");
+    let training: Vec<String> = vec!["NORMAL", "PATTERN", "NORMAL", "PATTERN", "NORMAL", "PATTERN"]
+        .into_iter()
+        .map(str::to_string)
+        .collect();
+    detector.train(&training).expect("train");
+
+    let results = batch_score(&detector, &sequences, 0.1).expect("Failed to process sequences");
 
     assert_eq!(
         results.len(),

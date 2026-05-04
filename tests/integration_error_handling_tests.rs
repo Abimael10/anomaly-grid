@@ -157,70 +157,51 @@ fn test_error_recovery() {
 fn test_batch_processing_error_handling() {
     let sequences = vec![
         vec!["A".to_string(), "B".to_string(), "C".to_string()],
-        vec![], // Empty sequence - might cause issues
+        vec![], // empty sequence - the new API returns an empty score list for it
         vec!["D".to_string(), "E".to_string(), "F".to_string()],
     ];
 
-    let config = AnomalyGridConfig::default();
-    let result = batch_process_sequences(&sequences, &config, 0.1);
+    let mut detector = AnomalyDetector::new(2).expect("detector");
+    let training: Vec<String> = vec!["A", "B", "C", "D", "E", "F"]
+        .into_iter()
+        .map(str::to_string)
+        .collect();
+    detector.train(&training).expect("train");
 
-    // Batch processing should handle errors gracefully
+    let result = batch_score(&detector, &sequences, 0.1);
+
+    // batch_score handles empty/short sequences gracefully — they yield
+    // zero scores rather than aborting the whole batch.
+    let scored = result.expect("batch_score should succeed on benign inputs");
+    assert_eq!(scored.len(), sequences.len());
     assert!(
-        result.is_ok(),
-        "Batch processing should handle errors gracefully"
+        scored[1].is_empty(),
+        "empty sequence yields no anomaly scores"
     );
 
-    let results = result.unwrap();
-    assert_eq!(
-        results.len(),
-        sequences.len(),
-        "Should return results for all sequences"
-    );
-
-    // Verify mathematical properties for successful results
-    for (i, anomaly_set) in results.iter().enumerate() {
-        for anomaly in anomaly_set {
-            assert!(
-                anomaly.likelihood >= 0.0 && anomaly.likelihood <= 1.0,
-                "Invalid likelihood in batch result {}: {}",
-                i,
-                anomaly.likelihood
-            );
-            assert!(
-                anomaly.anomaly_strength >= 0.0 && anomaly.anomaly_strength <= 1.0,
-                "Invalid anomaly strength in batch result {}: {}",
-                i,
-                anomaly.anomaly_strength
-            );
-            assert!(
-                anomaly.information_score >= 0.0,
-                "Invalid information score in batch result {}: {}",
-                i,
-                anomaly.information_score
-            );
+    for set in &scored {
+        for s in set {
+            assert!((0.0..=1.0).contains(&s.likelihood));
+            assert!((0.0..=1.0).contains(&s.anomaly_strength));
+            assert!(s.information_score >= 0.0);
         }
     }
 }
 
 #[test]
-fn test_invalid_batch_processing_parameters() {
+fn test_invalid_batch_threshold() {
     let sequences = vec![vec!["A".to_string(), "B".to_string(), "C".to_string()]];
 
-    let config = AnomalyGridConfig::default();
+    let mut detector = AnomalyDetector::new(2).expect("detector");
+    detector
+        .train(&vec!["A".to_string(), "B".to_string(), "C".to_string()])
+        .expect("train");
 
-    // Test invalid threshold
-    let result = batch_process_sequences(&sequences, &config, 1.5);
+    let result = batch_score(&detector, &sequences, 1.5);
     assert!(result.is_err(), "Should fail with invalid threshold");
 
-    // Test invalid configuration
-    let invalid_config = AnomalyGridConfig::default().with_smoothing_alpha(-1.0);
-
-    if let Err(_) = invalid_config {
-        // Expected - invalid config creation should fail
-    } else {
-        let result = batch_process_sequences(&sequences, &invalid_config.unwrap(), 0.1);
-        assert!(result.is_err(), "Should fail with invalid configuration");
-    }
+    let result = batch_score(&detector, &sequences, f64::NAN);
+    assert!(result.is_err(), "Should fail with non-finite threshold");
 }
 
 #[test]

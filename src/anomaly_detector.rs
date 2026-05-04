@@ -370,14 +370,22 @@ impl AnomalyDetector {
     }
 }
 
-/// Batch-process multiple sequences in parallel.
+/// Score many sequences in parallel against a **pre-trained** detector.
 ///
-/// **Note:** this v0.5 API trains a fresh detector per input and scores
-/// the same input — degenerate for true anomaly detection. v0.6 replaces
-/// it with `batch_score(&detector, ...)` over a pre-trained model.
-pub fn batch_process_sequences(
+/// This is the correct paradigm for anomaly detection: train once on
+/// known-normal data, then score any number of unknown sequences
+/// concurrently. Replaces v0.5's `batch_process_sequences`, which
+/// trained a fresh detector on every input and was therefore degenerate.
+///
+/// # Errors
+///
+/// Returns [`AnomalyGridError::InvalidThreshold`] if `threshold` is
+/// outside `[0, 1]` or non-finite. Per-sequence errors are propagated
+/// — if any sequence fails (e.g. detector untrained), the call returns
+/// the first error.
+pub fn batch_score(
+    detector: &AnomalyDetector,
     sequences: &[Vec<String>],
-    config: &AnomalyGridConfig,
     threshold: f64,
 ) -> AnomalyGridResult<Vec<Vec<AnomalyScore>>> {
     use rayon::prelude::*;
@@ -385,25 +393,9 @@ pub fn batch_process_sequences(
     if !threshold.is_finite() || !(MIN_THRESHOLD..=MAX_THRESHOLD).contains(&threshold) {
         return Err(AnomalyGridError::invalid_threshold(threshold));
     }
-    config.validate()?;
 
-    let results: Vec<Vec<AnomalyScore>> = sequences
+    sequences
         .par_iter()
-        .map(|sequence| {
-            if sequence.len() <= config.max_order {
-                return Vec::new();
-            }
-            AnomalyDetector::with_config(config.clone()).map_or_else(
-                |_| Vec::new(),
-                |mut detector| {
-                    detector
-                        .train(sequence)
-                        .ok()
-                        .and_then(|()| detector.detect_anomalies(sequence, threshold).ok())
-                        .unwrap_or_default()
-                },
-            )
-        })
-        .collect();
-    Ok(results)
+        .map(|seq| detector.detect_anomalies(seq, threshold))
+        .collect()
 }

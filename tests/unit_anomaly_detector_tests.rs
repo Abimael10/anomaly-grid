@@ -231,14 +231,20 @@ fn test_sequence_training() {
 
 #[test]
 fn test_batch_processing() {
-    let sequences = vec![
+    let sequences: Vec<Vec<String>> = vec![
         vec!["A", "B", "C"].iter().map(|s| s.to_string()).collect(),
         vec!["D", "E", "F"].iter().map(|s| s.to_string()).collect(),
         vec!["G", "H", "I"].iter().map(|s| s.to_string()).collect(),
     ];
 
-    let config = AnomalyGridConfig::default();
-    let results = batch_process_sequences(&sequences, &config, 0.1);
+    let mut detector = AnomalyDetector::new(2).expect("detector");
+    let training: Vec<String> = vec!["A", "B", "A", "B", "A", "B"]
+        .into_iter()
+        .map(str::to_string)
+        .collect();
+    detector.train(&training).expect("train");
+
+    let results = batch_score(&detector, &sequences, 0.1);
 
     assert!(results.is_ok(), "Batch processing should succeed");
     let anomaly_sets = results.unwrap();

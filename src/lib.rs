@@ -76,7 +76,7 @@ pub(crate) mod string_interner;
 pub(crate) mod transition_counts;
 pub(crate) mod validation;
 
-pub use anomaly_detector::{batch_process_sequences, AnomalyDetector, AnomalyScore};
+pub use anomaly_detector::{batch_score, AnomalyDetector, AnomalyScore};
 pub use config::AnomalyGridConfig;
 pub use context_tree::{ContextNode, ContextTree};
 pub use error::{AnomalyGridError, AnomalyGridResult};
